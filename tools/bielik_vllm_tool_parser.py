@@ -5,14 +5,22 @@ from typing import Union, Sequence
 import partial_json_parser
 from partial_json_parser.core.options import Allow
 
-from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
-                                              DeltaFunctionCall, DeltaMessage,
-                                              DeltaToolCall,
-                                              ExtractedToolCallInformation,
-                                              FunctionCall, ToolCall)
-from vllm.entrypoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from vllm.entrypoints.openai.protocol import (
+    ChatCompletionRequest,
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from vllm.entrypoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+    ToolParserManager,
+)
 from vllm.logger import init_logger
-from vllm.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
+from vllm.tokenizers import TokenizerLike  # preferred over deprecated AnyTokenizer
+from vllm.tokenizers.mistral import MistralTokenizer
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
@@ -21,7 +29,7 @@ logger = init_logger(__name__)
 @ToolParserManager.register_module("bielik")
 class BielikToolParser(ToolParser):
 
-    def __init__(self, tokenizer: AnyTokenizer):
+    def __init__(self, tokenizer: TokenizerLike):
         super().__init__(tokenizer)
 
         if isinstance(self.model_tokenizer, MistralTokenizer):
