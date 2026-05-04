@@ -47,8 +47,7 @@ Reasoning is available in Bielik 11B v2.5 Instruct and Bielik v3.0 Instruct mode
 vllm serve speakleash/Bielik-11B-v3.0-Instruct \
     --chat-template ./bielik-tools/tools/bielik_advanced_chat_template.jinja \
     --reasoning-parser-plugin ./bielik-tools/tools/bielik_vllm_reasoning_parser.py \
-    --reasoning-parser bielik \
-    --enable-reasoning
+    --reasoning-parser bielik
 ```
 
 Then, run [reasoning\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/reasoning_streaming.py) to see how the model performs in reasoning mode.
