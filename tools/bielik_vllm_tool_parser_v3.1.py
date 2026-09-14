@@ -16,7 +16,7 @@ from vllm.logger import init_logger
 from vllm.sampling_params import StructuredOutputsParams
 from vllm.tokenizers import TokenizerLike
 from vllm.tokenizers.mistral import MistralTokenizer
-from vllm.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from vllm.tool_parsers.abstract_tool_parser import Tool, ToolParser, ToolParserManager
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
@@ -29,18 +29,16 @@ logger = init_logger(__name__)
 class BielikToolParser(ToolParser):
     """Tool parser for Bielik models with the v3.1 chat template."""
 
-    def __init__(self, tokenizer: TokenizerLike):
-        super().__init__(tokenizer)
+    # Tag-wrapped tool calls are incompatible with vLLM's default JSON
+    # "required"/named guided path — use extract_tool_calls (+ adjust_request).
+    supports_required_and_named: bool = False
+
+    def __init__(self, tokenizer: TokenizerLike, tools: list[Tool] | None = None):
+        super().__init__(tokenizer, tools)
 
         if isinstance(self.model_tokenizer, MistralTokenizer):
             logger.warning("Detected Mistral tokenizer when using a Bielik model")
             self.model_tokenizer = self.model_tokenizer.tokenizer
-
-        self.current_tool_name_sent: bool = False
-        self.prev_tool_call_arr: list[dict] = []
-        self.current_tool_id: int = -1
-        self.streamed_args_for_tool: list[str] = [
-        ]  # map what has been streamed for each tool so far to a list
 
         self.tool_call_start_token: str = "<tool_call>"
         self.tool_call_end_token: str = "</tool_call>"
