@@ -69,16 +69,12 @@ class BielikToolParser(ToolParser):
                 # enforcement pass tool_choice via chat_template_kwargs too:
                 #   chat_template_kwargs={"tool_choice": "required"}
                 #
-                # Regex allows optional free text (incl. a closed </think> from
-                # an open-think generation prompt) before one or more
-                # <tool_call> blocks. Args may contain '<' so we do not use [^<].
+                # Regex without look-around (xgrammar/outlines do not support it).
+                # Allow free text before/between/after, but require ≥1 <tool_call> block.
                 request.tool_choice = "auto"
                 request.response_format = None
                 request.structured_outputs = StructuredOutputsParams(
-                    regex=(
-                        r"(?:(?!<tool_call>)[\s\S])*?"
-                        r"(?:<tool_call>[\s\S]*?</tool_call>\s*)+"
-                    )
+                    regex=r"[\s\S]*?(?:<tool_call>[\s\S]*?</tool_call>\s*)+[\s\S]*"
                 )
         return request
 
