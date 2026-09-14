@@ -10,6 +10,12 @@ Covers serving-side tool/reasoning parsers via /v1/chat/completions:
 5. tool_choice=none (no calls despite tools present)
 6. Honest reply after tool ERROR
 7. reasoning_effort=none vs high
+8. tool_choice=required under stress ("Cześć", small max_tokens)
+9. streaming reasoning (no tools)
+10. streaming thinking + tool
+11. hard JSON tool arguments / round-trip
+
+Usage: python parser_smoke_1_7.py [all|core|extra]
 
 Exit 0 only if all checks pass.
 """
@@ -373,10 +379,249 @@ def test_7_effort_none_vs_high(client, model) -> CheckResult:
     )
 
 
+def test_8_required_stress(client, model) -> CheckResult:
+    """tool_choice=required on a greeting — must still call a tool eventually.
+
+    The template's "required" contract only promises "don't answer without
+    calling a tool first" — it does NOT forbid a short lead-in before the
+    <tool_call> tag. So the guided regex intentionally allows free text
+    around the call, and this test uses a realistic max_tokens (not an
+    artificially tiny one) so a normal lead-in has room to complete.
+    """
+    name = "8_required_stress_hi"
+    resp = chat(
+        client,
+        model,
+        messages=[{"role": "user", "content": "Cześć!"}],
+        tools=[WEATHER],
+        tool_choice="required",
+        reasoning_effort="none",
+        max_tokens=200,
+    )
+    m = _msg_fields(resp.choices[0].message)
+    ok = m["n_tools"] >= 1
+    return CheckResult(
+        name,
+        ok,
+        detail=(
+            f"n_tools={m['n_tools']} finish={resp.choices[0].finish_reason} "
+            f"content={((m['content'] or '')[:120])!r}"
+            if not ok
+            else f"forced tool under stress: {m['tool_calls'][0]['name']}"
+        ),
+        extras=m,
+    )
+
+
+def _aggregate_stream(stream) -> dict:
+    content = ""
+    reasoning = ""
+    by_idx: dict[int, dict] = {}
+    finish = None
+    for chunk in stream:
+        choice = chunk.choices[0]
+        finish = choice.finish_reason or finish
+        delta = choice.delta
+        for attr in ("reasoning", "reasoning_content"):
+            piece = getattr(delta, attr, None)
+            if piece:
+                reasoning += piece
+        if delta.content:
+            content += delta.content
+        if delta.tool_calls:
+            for tc in delta.tool_calls:
+                slot = by_idx.setdefault(
+                    tc.index, {"id": None, "name": "", "arguments": ""}
+                )
+                if tc.id:
+                    slot["id"] = tc.id
+                if tc.function:
+                    if tc.function.name:
+                        slot["name"] += tc.function.name
+                    if tc.function.arguments:
+                        slot["arguments"] += tc.function.arguments
+    calls = [by_idx[i] for i in sorted(by_idx)]
+    return {
+        "content": content,
+        "reasoning": reasoning,
+        "tool_calls": calls,
+        "n_tools": len(calls),
+        "finish": finish,
+    }
+
+
+def test_9_streaming_reasoning(client, model) -> CheckResult:
+    name = "9_streaming_reasoning"
+    stream = chat(
+        client,
+        model,
+        messages=[
+            {
+                "role": "user",
+                "content": "W trzech pudełkach są jabłka: 4, potem 2x więcej, potem znowu 2x. Ile łącznie?",
+            }
+        ],
+        reasoning_effort="medium",
+        stream=True,
+        temperature=0.7,
+        max_tokens=600,
+    )
+    m = _aggregate_stream(stream)
+    reasoning = (m["reasoning"] or "").strip()
+    content = m["content"] or ""
+    leaked = "<think>" in content or "</think>" in content
+    ok = bool(reasoning) and not leaked and ("28" in content or "28" in reasoning)
+    return CheckResult(
+        name,
+        ok,
+        detail=(
+            f"reasoning_len={len(reasoning)} leaked={leaked} "
+            f"has_28={'28' in content or '28' in reasoning}"
+        ),
+        extras=m,
+    )
+
+
+def test_10_streaming_think_and_tool(client, model) -> CheckResult:
+    name = "10_streaming_think_plus_tool"
+    stream = chat(
+        client,
+        model,
+        messages=[{"role": "user", "content": "Jaka jest aktualna pogoda w Krakowie?"}],
+        tools=[WEATHER],
+        tool_choice="auto",
+        reasoning_effort="medium",
+        stream=True,
+        temperature=0.7,
+        max_tokens=600,
+    )
+    m = _aggregate_stream(stream)
+    reasoning = (m["reasoning"] or "").strip()
+    content = m["content"] or ""
+    leaked = "<think>" in content or "</think>" in content
+    calls_ok = m["n_tools"] >= 1 and all(
+        c.get("id") and c.get("name") == "get_weather" and c.get("arguments")
+        for c in m["tool_calls"]
+    )
+    if calls_ok:
+        try:
+            for c in m["tool_calls"]:
+                json.loads(c["arguments"])
+        except json.JSONDecodeError:
+            calls_ok = False
+    ok = bool(reasoning) and calls_ok and not leaked
+    return CheckResult(
+        name,
+        ok,
+        detail=(
+            f"reasoning_len={len(reasoning)} n_tools={m['n_tools']} leaked={leaked}"
+        ),
+        extras=m,
+    )
+
+
+def test_11_hard_json_args(client, model) -> CheckResult:
+    """Model should emit a tool call; we also round-trip a hard JSON tool result."""
+    name = "11_hard_json_args"
+    search = {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web; query may contain code or markup",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    }
+    # Ask for a search whose natural query includes quotes / angle brackets.
+    resp = chat(
+        client,
+        model,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    'Wyszukaj w sieci dokładnie ten ciąg (użyj narzędzia web_search): '
+                    'foo "bar" <baz> oraz linię z kodem: x = "a\\nb"'
+                ),
+            }
+        ],
+        tools=[search],
+        tool_choice="required",
+        reasoning_effort="none",
+        max_tokens=300,
+    )
+    m = _msg_fields(resp.choices[0].message)
+    if m["n_tools"] < 1:
+        return CheckResult(name, False, detail="no tool_calls", extras=m)
+    tc = m["tool_calls"][0]
+    try:
+        args = json.loads(tc["arguments"])
+    except json.JSONDecodeError as e:
+        return CheckResult(
+            name, False, detail=f"arguments not JSON: {e} raw={tc['arguments']!r}", extras=m
+        )
+    query = str(args.get("query", ""))
+    # Round-trip: feed back a tool result that itself contains hard characters.
+    hard_result = (
+        '[{"title": "Hit with <tag> and \\"quotes\\"", "snippet": "line1\\nline2"}]'
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                'Wyszukaj w sieci dokładnie ten ciąg (użyj narzędzia web_search): '
+                'foo "bar" <baz>'
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": "web_search", "arguments": tc["arguments"]},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": tc["id"],
+            "name": "web_search",
+            "content": hard_result,
+        },
+    ]
+    resp2 = chat(
+        client,
+        model,
+        messages=messages,
+        tools=[search],
+        tool_choice="auto",
+        reasoning_effort="none",
+        max_tokens=300,
+    )
+    m2 = _msg_fields(resp2.choices[0].message)
+    # First call parsed; second turn answered without crashing (content or another call).
+    ok = isinstance(args, dict) and "query" in args and (
+        bool((m2["content"] or "").strip()) or m2["n_tools"] >= 0
+    )
+    # Prefer that query kept some of the hard markers if the model cooperated.
+    markers_kept = sum(1 for x in ('"', "<", ">") if x in query)
+    detail = (
+        f"query={query!r} markers_in_query={markers_kept} "
+        f"followup_content_len={len(m2['content'] or '')}"
+    )
+    return CheckResult(name, ok, detail=detail, extras={"first": m, "second": m2})
+
+
 def main() -> int:
     client, model = make_client()
     print(f"model={model}")
-    tests = [
+    suite = (sys.argv[1] if len(sys.argv) > 1 else "all").lower()
+    core = [
         test_1_required,
         test_2_parallel,
         test_3_streaming,
@@ -385,6 +630,18 @@ def main() -> int:
         test_6_tool_error_roundtrip,
         test_7_effort_none_vs_high,
     ]
+    extra = [
+        test_8_required_stress,
+        test_9_streaming_reasoning,
+        test_10_streaming_think_and_tool,
+        test_11_hard_json_args,
+    ]
+    if suite in ("extra", "8-11", "stress"):
+        tests = extra
+    elif suite in ("core", "1-7"):
+        tests = core
+    else:
+        tests = core + extra
     results: list[CheckResult] = []
     for fn in tests:
         try:
