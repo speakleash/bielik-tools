@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parser smoke tests 1–7 against a live vLLM chat server (v3.1).
+"""Parser smoke tests against a live vLLM chat server (v3.1 kwargs by default).
 
 Covers serving-side tool/reasoning parsers via /v1/chat/completions:
 
@@ -14,6 +14,7 @@ Covers serving-side tool/reasoning parsers via /v1/chat/completions:
 9. streaming reasoning (no tools)
 10. streaming thinking + tool
 11. hard JSON tool arguments / round-trip
+12. structured JSON output with reasoning off vs on
 
 Usage: python parser_smoke_1_7.py [all|core|extra]
 
@@ -38,6 +39,22 @@ WEATHER = {
             "required": ["city"],
         },
     },
+}
+
+# Prefer response_format / structured_outputs over legacy extra_body.guided_json
+# (guided_json is ignored on newer vLLM and does not enforce the schema).
+CAR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "brand": {"type": "string"},
+        "model": {"type": "string"},
+        "car_type": {
+            "type": "string",
+            "enum": ["sedan", "SUV", "Truck", "Coupe"],
+        },
+    },
+    "required": ["brand", "model", "car_type"],
+    "additionalProperties": False,
 }
 
 
@@ -80,20 +97,48 @@ def chat(
     stream=False,
     max_tokens=400,
     temperature=0.0,
+    response_format=None,
+    extra_body=None,
 ):
+    body = {"chat_template_kwargs": {"reasoning_effort": reasoning_effort}}
+    if extra_body:
+        body.update(extra_body)
     kwargs = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "stream": stream,
-        "extra_body": {"chat_template_kwargs": {"reasoning_effort": reasoning_effort}},
+        "extra_body": body,
     }
     if tools is not None:
         kwargs["tools"] = tools
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
+    if response_format is not None:
+        kwargs["response_format"] = response_format
     return client.chat.completions.create(**kwargs)
+
+
+def _parse_json_object(text: str | None) -> dict | None:
+    """Parse a JSON object from assistant content. Strict: no markdown salvage."""
+    if not text or not str(text).strip():
+        return None
+    try:
+        obj = json.loads(str(text).strip())
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _car_schema_ok(obj: dict | None) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    if not all(k in obj for k in ("brand", "model", "car_type")):
+        return False
+    if not all(isinstance(obj[k], str) and obj[k].strip() for k in ("brand", "model")):
+        return False
+    return obj["car_type"] in ("sedan", "SUV", "Truck", "Coupe")
 
 
 def test_1_required(client, model) -> CheckResult:
@@ -617,6 +662,77 @@ def test_11_hard_json_args(client, model) -> CheckResult:
     return CheckResult(name, ok, detail=detail, extras={"first": m, "second": m2})
 
 
+def test_12_structured_vs_reasoning(client, model) -> CheckResult:
+    """Structured JSON must land in content; with thinking, reasoning must split out.
+
+    Uses response_format.json_schema (enforced on current vLLM). Legacy
+    extra_body.guided_json is intentionally not used — it is ignored on v0.24+.
+
+    Expectation with reasoning on: non-empty message.reasoning AND schema-valid
+    JSON in message.content (not only inside reasoning). Known failure mode on
+    stock Bielik 3.0: entire payload goes to reasoning, content=null.
+    """
+    name = "12_structured_json_vs_reasoning"
+    prompt = [
+        {
+            "role": "user",
+            "content": (
+                "Return ONLY a JSON object for an iconic 1990s car matching the "
+                "schema fields brand, model, car_type."
+            ),
+        }
+    ]
+    rf = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "CarDescription",
+            "schema": CAR_SCHEMA,
+            "strict": True,
+        },
+    }
+    none_resp = chat(
+        client,
+        model,
+        messages=prompt,
+        reasoning_effort="none",
+        response_format=rf,
+        max_tokens=200,
+        temperature=0.0,
+    )
+    think_resp = chat(
+        client,
+        model,
+        messages=prompt,
+        reasoning_effort="medium",
+        response_format=rf,
+        max_tokens=800,
+        temperature=0.7,
+    )
+    none_m = _msg_fields(none_resp.choices[0].message)
+    think_m = _msg_fields(think_resp.choices[0].message)
+    none_obj = _parse_json_object(none_m["content"])
+    think_obj = _parse_json_object(think_m["content"])
+    none_r = (none_m["reasoning"] or "").strip()
+    think_r = (think_m["reasoning"] or "").strip()
+    none_ok = _car_schema_ok(none_obj) and not none_r
+    # JSON must be in content after think; stuffing schema JSON only into
+    # reasoning counts as fail (common with enable_thinking + structured).
+    think_ok = _car_schema_ok(think_obj) and bool(think_r)
+    ok = none_ok and think_ok
+    detail = (
+        f"none: schema_ok={_car_schema_ok(none_obj)} reasoning_len={len(none_r)} "
+        f"content={((none_m['content'] or '')[:80])!r}; "
+        f"think: schema_in_content={_car_schema_ok(think_obj)} "
+        f"reasoning_len={len(think_r)} content={((think_m['content'] or '')[:80])!r}"
+    )
+    return CheckResult(
+        name,
+        ok,
+        detail=detail,
+        extras={"none": none_m, "think": think_m, "none_obj": none_obj, "think_obj": think_obj},
+    )
+
+
 def main() -> int:
     client, model = make_client()
     print(f"model={model}")
@@ -635,11 +751,14 @@ def main() -> int:
         test_9_streaming_reasoning,
         test_10_streaming_think_and_tool,
         test_11_hard_json_args,
+        test_12_structured_vs_reasoning,
     ]
-    if suite in ("extra", "8-11", "stress"):
+    if suite in ("extra", "8-12", "8-11", "stress"):
         tests = extra
     elif suite in ("core", "1-7"):
         tests = core
+    elif suite in ("12", "structured"):
+        tests = [test_12_structured_vs_reasoning]
     else:
         tests = core + extra
     results: list[CheckResult] = []

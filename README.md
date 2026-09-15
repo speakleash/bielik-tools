@@ -33,9 +33,14 @@ Choose the tool parser file matching your vLLM version:
 
 | vLLM version | Tool parser | Reasoning parser |
 |---|---|---|
-| ≥ 0.15.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
+| ≥ 0.24.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
+| 0.15.0 – 0.23.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.13.0 – 0.14.x | `bielik_vllm_tool_parser_v0.13.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
 | ≤ 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
+
+The 0.24.0 tool-parser cut is the vLLM `ToolParser` API change
+(`__init__(tokenizer, tools=…)` plus `supports_required_and_named`).
+Reasoning parsers are unchanged across 0.15+.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
