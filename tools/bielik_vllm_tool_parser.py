@@ -1,3 +1,11 @@
+"""Tool parser for Bielik models on vLLM >= 0.24.0.
+
+Compatible with ToolParser.__init__(tokenizer, tools=...) and sets
+supports_required_and_named=False so tag-wrapped <tool_call> output uses
+extract_tool_calls / adjust_request instead of vLLM's JSON required path.
+
+For vLLM 0.15.0–0.23.x use bielik_vllm_tool_parser_v0.15.0.py.
+"""
 import json
 import re
 from typing import Union, Sequence
@@ -16,7 +24,7 @@ from vllm.logger import init_logger
 from vllm.sampling_params import StructuredOutputsParams
 from vllm.tokenizers import TokenizerLike
 from vllm.tokenizers.mistral import MistralTokenizer
-from vllm.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from vllm.tool_parsers.abstract_tool_parser import Tool, ToolParser, ToolParserManager
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
@@ -24,9 +32,12 @@ logger = init_logger(__name__)
 
 @ToolParserManager.register_module("bielik")
 class BielikToolParser(ToolParser):
+    # Tag-wrapped tool calls are incompatible with vLLM's default JSON
+    # "required"/named guided path — use extract_tool_calls (+ adjust_request).
+    supports_required_and_named: bool = False
 
-    def __init__(self, tokenizer: TokenizerLike):
-        super().__init__(tokenizer)
+    def __init__(self, tokenizer: TokenizerLike, tools: list[Tool] | None = None):
+        super().__init__(tokenizer, tools)
 
         if isinstance(self.model_tokenizer, MistralTokenizer):
             logger.warning("Detected Mistral tokenizer when using a Bielik model")
@@ -49,7 +60,7 @@ class BielikToolParser(ToolParser):
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
         if self.tool_call_start_token_id is None or self.tool_call_end_token_id is None:
             raise RuntimeError("Bielik Tool parser could not locate tool call start/end tokens in the tokenizer!")
-      
+
     def adjust_request(self, request: ChatCompletionRequest) -> ChatCompletionRequest:
         if request.tools and request.tool_choice != 'none':
             # do not skip special tokens because Bielik uses the special tokens

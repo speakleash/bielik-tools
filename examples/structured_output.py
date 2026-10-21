@@ -1,14 +1,16 @@
 import logging
 from enum import Enum
-from openai import OpenAI
+
 from pydantic import BaseModel
-from termcolor import colored  
+from termcolor import colored
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from _vllm_env import make_client
 
-model = "Bielik-11B-v2.5-Instruct" # Replace with your desired model
-client = OpenAI(api_key="EMPTY", base_url="http://127.0.0.1:8000/v1") # Adjust if needed
-logging.info(f"Using model: {model}")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+client, model = make_client()
+logging.info("Using model: %s", model)
+
 
 class CarType(str, Enum):
     sedan = "sedan"
@@ -23,15 +25,13 @@ class CarDescription(BaseModel):
     car_type: CarType
 
 
-logging.info(f"Using model: {model}")
-
 def pretty_print_conversation(messages):
     role_to_color = {
         "system": "red",
         "user": "green",
-        "assistant": "blue"
+        "assistant": "blue",
     }
-    
+
     for message in messages:
         base_color = role_to_color.get(message["role"], "white")
         if message["role"] == "system":
@@ -43,34 +43,53 @@ def pretty_print_conversation(messages):
         else:
             print(colored(str(message), base_color))
 
-def chat_completion_request(messages, extra_body):
+
+def chat_completion_request(messages, extra_body=None):
     try:
-        response = client.chat.completions.create(
+        body = {
+            "chat_template_kwargs": {"reasoning_effort": "none"},
+        }
+        if extra_body:
+            body.update(extra_body)
+        return client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=0.2,
-            extra_body=extra_body,
+            extra_body=body,
         )
-        return response
     except Exception as e:
-        logging.warning(f"Unable to generate ChatCompletion response. Exception: {e}")
+        logging.warning("Unable to generate ChatCompletion response. Exception: %s", e)
         return e
+
 
 def add_turn(prompt, messages, extra_body=None):
     messages.append({"role": "user", "content": prompt})
     chat_response = chat_completion_request(messages, extra_body)
+    if isinstance(chat_response, Exception):
+        logging.error("API error: %s", chat_response)
+        messages.append({"role": "assistant", "content": f"API Error: {chat_response}"})
+        return
     assistant_message = chat_response.choices[0].message
     messages.append(assistant_message.model_dump())
 
+
 if __name__ == "__main__":
     json_schema = CarDescription.model_json_schema()
-    logging.info(f"Configured JSON schema: {json_schema}")
+    logging.info("Configured JSON schema: %s", json_schema)
 
     messages = []
     add_turn("Wymyśl i napisz mi krótkie motywujące zdanie na dziś", messages)
-    add_turn("Wygeneruj JSON zawierający markę, model i typ nadwozia najbardziej ikonicznego samochodu z lat 90.", messages, {"guided_json": json_schema})
+    add_turn(
+        "Wygeneruj JSON zawierający markę, model i typ nadwozia najbardziej ikonicznego samochodu z lat 90.",
+        messages,
+        {"guided_json": json_schema},
+    )
     add_turn("Napisz teraz krótki motywujący tekst biorąc pod uwagę ten samochód", messages)
-    add_turn("Jaki jest najlepszy samochód dla 4 osobowej rodziny w Polsce? Odpowiedz w formacie JSON podając markę, model i typ nadwozia", messages, {"guided_json": json_schema})
-      
-    logging.info(f"Messages:")
+    add_turn(
+        "Jaki jest najlepszy samochód dla 4 osobowej rodziny w Polsce? Odpowiedz w formacie JSON podając markę, model i typ nadwozia",
+        messages,
+        {"guided_json": json_schema},
+    )
+
+    logging.info("Messages:")
     pretty_print_conversation(messages)
