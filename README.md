@@ -78,11 +78,14 @@ tool parser and one reasoning parser: the variants register the same name,
 `bielik`.
 
 The compatibility table describes vLLM API variants, not Bielik model versions.
+For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
+backport path.
 Unpatched vLLM 0.14.0 and 0.15.0 overwrite the template `reasoning_effort` kwarg
 with the request-level value, including `None`. Apply the
 [version-specific backports](https://github.com/speakleash/bielik-tools/pull/20)
-before starting those servers to use the original v3.1 template. The same
-backport script fixes reasoning/tool handoff in vLLM 0.20.0. The advanced
+before starting those servers to use the original v3.1 template. For 0.20.0
+use the [native combined parser](https://github.com/speakleash/bielik-tools/pull/21)
+instead of patching vLLM. The advanced
 template remains an available legacy option, not a required workaround.
 On 24 GB GPUs, the BF16-to-FP8 load path in vLLM 0.13–0.15 can also exceed
 VRAM temporarily. A checkpoint already serialized in FP8 avoids that peak;
