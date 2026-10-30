@@ -64,6 +64,12 @@ class Bielik020Parser(DelegatingParser):
     tool_parser_cls = ToolParser
 
     def __init__(self, tokenizer, tools=None, **kwargs):
+        # Refuse the superseded runtime backport: combining both would
+        # preserve the same reasoning twice. This plugin owns the handoff.
+        if "reasoning_message" in DelegatingParser.parse_delta.__code__.co_varnames:
+            raise RuntimeError(
+                "Restore the original vLLM 0.20 parser before loading bielik_020"
+            )
         super().__init__(tokenizer)
         self.reasoning_parser = self.reasoning_parser_cls(tokenizer, **kwargs)
         self.tool_parser = self.tool_parser_cls(tokenizer, tools)

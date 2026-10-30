@@ -102,3 +102,15 @@ def test_none_disables_reasoning_even_with_legacy_enable_flag(tokenizer, request
     )
     assert not delta.reasoning
     assert flatten([delta]) == [("calc", {"x": 2})]
+
+
+def test_superseded_runtime_patch_is_rejected(tokenizer, request_data, monkeypatch):
+    from vllm.parser.abstract_parser import DelegatingParser
+
+    def old_backport(self, *args, **kwargs):
+        reasoning_message = None
+        return reasoning_message
+
+    monkeypatch.setattr(DelegatingParser, "parse_delta", old_backport)
+    with pytest.raises(RuntimeError, match="Restore the original"):
+        parser_for(tokenizer, request_data, reasoning_effort="low")

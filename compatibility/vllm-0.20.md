@@ -32,11 +32,12 @@ older APIs are provided. Use the template distributed with the model.
 No installed vLLM files or global methods are replaced. Do not apply the old
 0.20 runtime patch. If it was applied before, restore the original
 `vllm/parser/abstract_parser.py` from its adjacent `.bielik-compat.orig` backup
-or reinstall the matching wheel before validating the plugin.
+or reinstall the matching wheel before validating the plugin. The plugin
+rejects the superseded handoff backport to avoid emitting reasoning twice.
 
 ## Validation
 
-On the original vLLM 0.20.0 wheel, the parser suite passes 51 tests. The tests
+On the original vLLM 0.20.0 wheel, the parser suite passes 52 tests. The tests
 check native registry selection, a complete response in one chunk, incomplete
 calls, simultaneous reasoning/content, interleaved independent streams and
 reasoning disabled through `reasoning_effort=none`.
