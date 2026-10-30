@@ -78,6 +78,13 @@ tool parser and one reasoning parser: the variants register the same name,
 `bielik`.
 
 The compatibility table describes vLLM API variants, not Bielik model versions.
+vLLM 0.14.0 and 0.15.0 overwrite the template `reasoning_effort` kwarg with the
+request-level value, including `None`. The strict v3.1 template rejects that
+value; use the advanced template shown here on those releases, or address the
+upstream/template incompatibility before selecting v3.1.
+On 24 GB GPUs, the BF16-to-FP8 load path in vLLM 0.13–0.15 can also exceed
+VRAM temporarily. A checkpoint already serialized in FP8 avoids that peak;
+reducing the KV-cache allocation alone does not remove the weight-loading peak.
 
 ## Reasoning
 
