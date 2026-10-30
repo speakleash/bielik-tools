@@ -1,0 +1,6 @@
+-r requirements.txt
+python-dotenv
+langchain-tavily
+crewai
+crewai-tools
+pydantic
