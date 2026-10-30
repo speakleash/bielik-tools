@@ -1,4 +1,4 @@
-"""Apply narrowly scoped backports to vLLM 0.14.0, 0.15.0 or 0.20.0.
+"""Apply narrowly scoped backports to vLLM 0.14.0 or 0.15.0.
 
 Run this script with the Python interpreter of the target vLLM environment.
 Default: inspect only. Pass --apply to patch, then restart the server.
@@ -19,34 +19,6 @@ EFFORT_NEW = """                chat_template_kwargs = request.chat_template_kwa
                 if request.reasoning_effort is not None:
                     chat_template_kwargs["reasoning_effort"] = request.reasoning_effort"""
 
-HANDOFF_OLD = """            delta_message = self.extract_tool_calls_streaming(
-                previous_text=state.previous_text,
-                current_text=current_text,
-                delta_text=delta_text,
-                previous_token_ids=state.previous_token_ids,
-                current_token_ids=current_token_ids,
-                delta_token_ids=delta_token_ids,
-                request=request,  # type: ignore[arg-type]
-            )"""
-HANDOFF_NEW = """            reasoning_message = delta_message
-            delta_message = self.extract_tool_calls_streaming(
-                previous_text=state.previous_text,
-                current_text=current_text,
-                delta_text=delta_text,
-                previous_token_ids=state.previous_token_ids,
-                current_token_ids=current_token_ids,
-                delta_token_ids=delta_token_ids,
-                request=request,  # type: ignore[arg-type]
-            )
-            # The handoff may contain reasoning and a tool call in one chunk.
-            # Content was handed to the tool parser above; retain reasoning too.
-            if reasoning_message is not None and reasoning_message.reasoning:
-                if delta_message is None:
-                    delta_message = reasoning_message
-                else:
-                    delta_message.reasoning = (
-                        reasoning_message.reasoning + (delta_message.reasoning or "")
-                    )"""
 
 PATCHES = {
     "0.14.0": ("vllm/entrypoints/openai/serving_chat.py", EFFORT_OLD, EFFORT_NEW),
@@ -55,7 +27,6 @@ PATCHES = {
         EFFORT_OLD,
         EFFORT_NEW,
     ),
-    "0.20.0": ("vllm/parser/abstract_parser.py", HANDOFF_OLD, HANDOFF_NEW),
 }
 
 

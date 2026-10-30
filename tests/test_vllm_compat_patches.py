@@ -50,51 +50,10 @@ def test_effort_precedence_preserves_template_value_when_api_field_is_unset(
     assert changed
 
 
-def handoff_source():
-    return (
-        "class Pipeline:\n"
-        "    def handoff(self, reason, tool):\n"
-        "        self.extract_tool_calls_streaming = lambda **kw: tool\n"
-        "        state = type('State', (), {'previous_text': '', 'previous_token_ids': []})()\n"
-        "        current_text = delta_text = ''\n"
-        "        current_token_ids = delta_token_ids = []\n"
-        "        request = None\n"
-        "        delta_message = reason\n"
-        "        if True:\n" + patches.HANDOFF_OLD + "\n"
-        "        return delta_message\n"
-    )
-
-
-@pytest.mark.parametrize("tool", [None, "call", "text"])
-def test_handoff_preserves_reasoning_with_or_without_tool_delta(tool):
-    source, _ = patches.transform(
-        handoff_source(), patches.HANDOFF_OLD, patches.HANDOFF_NEW
-    )
-    namespace = {}
-    exec(source, namespace)
-    reason = SimpleNamespace(reasoning="analysis", content=None)
-    result = (
-        None
-        if tool is None
-        else SimpleNamespace(
-            reasoning=None,
-            content="answer" if tool == "text" else None,
-            tool_calls=["call-1"] if tool == "call" else [],
-        )
-    )
-    merged = namespace["Pipeline"]().handoff(reason, result)
-    assert merged.reasoning == "analysis"
-    if result is not None:
-        assert merged is result
-        assert merged.content == ("answer" if tool == "text" else None)
-        assert merged.tool_calls == (["call-1"] if tool == "call" else [])
-
-
 @pytest.mark.parametrize(
     "old,new,source",
     [
         (patches.EFFORT_OLD, patches.EFFORT_NEW, effort_source()),
-        (patches.HANDOFF_OLD, patches.HANDOFF_NEW, handoff_source()),
     ],
 )
 def test_backports_are_idempotent(old, new, source):
@@ -148,3 +107,21 @@ def test_refuse_symlinked_parent_directory(tmp_path):
             link / "module.py", patches.EFFORT_OLD, patches.EFFORT_NEW, apply=True
         )
     assert (shared / "module.py").read_text() == effort_source()
+
+
+def test_vllm_020_is_not_patched(monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["patch_vllm_compat.py", "--apply"])
+    monkeypatch.setattr(
+        patches.importlib.metadata,
+        "distribution",
+        lambda name: SimpleNamespace(version="0.20.0"),
+    )
+
+    def unexpected_write(*args, **kwargs):
+        raise AssertionError("vLLM 0.20 must use the native plugin")
+
+    monkeypatch.setattr(patches, "apply_file", unexpected_write)
+    patches.main()
+    assert "unchanged" in capsys.readouterr().out
