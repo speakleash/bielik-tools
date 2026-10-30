@@ -3,7 +3,12 @@ from collections.abc import Sequence
 from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
-from vllm.entrypoints.openai.engine.protocol import DeltaMessage
+try:
+    from vllm.entrypoints.generate.base.protocol import DeltaMessage
+except ModuleNotFoundError as exc:
+    if not exc.name.startswith("vllm.entrypoints.generate"):
+        raise
+    from vllm.entrypoints.openai.engine.protocol import DeltaMessage
 from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
 from vllm.reasoning import ReasoningParser, ReasoningParserManager
 from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser

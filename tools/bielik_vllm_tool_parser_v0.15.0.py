@@ -1,6 +1,6 @@
-"""Tool parser for Bielik models on vLLM 0.15.0–0.23.x.
+"""Tool parser for Bielik models on vLLM 0.15.0–0.18.x.
 
-For vLLM >= 0.24.0 (ToolParser.__init__ takes tools=), use
+For vLLM >= 0.19.0 (ToolParser.__init__ takes tools=), use
 bielik_vllm_tool_parser.py instead.
 """
 

@@ -1,10 +1,10 @@
-"""Tool parser for Bielik models on vLLM >= 0.24.0.
+"""Tool parser for Bielik models on vLLM >= 0.19.0.
 
 Compatible with ToolParser.__init__(tokenizer, tools=...) and sets
 supports_required_and_named=False so tag-wrapped <tool_call> output uses
 extract_tool_calls / adjust_request instead of vLLM's JSON required path.
 
-For vLLM 0.15.0–0.23.x use bielik_vllm_tool_parser_v0.15.0.py.
+For vLLM 0.15.0–0.18.x use bielik_vllm_tool_parser_v0.15.0.py.
 """
 import json
 import re
@@ -16,10 +16,18 @@ from partial_json_parser.core.options import Allow
 from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
-from vllm.entrypoints.openai.engine.protocol import (
-    DeltaFunctionCall, DeltaMessage, DeltaToolCall,
-    ExtractedToolCallInformation, FunctionCall, ToolCall,
-)
+try:
+    from vllm.entrypoints.generate.base.protocol import (
+        DeltaFunctionCall, DeltaMessage, DeltaToolCall,
+        ExtractedToolCallInformation, FunctionCall, ToolCall,
+    )
+except ModuleNotFoundError as exc:
+    if not exc.name.startswith("vllm.entrypoints.generate"):
+        raise
+    from vllm.entrypoints.openai.engine.protocol import (
+        DeltaFunctionCall, DeltaMessage, DeltaToolCall,
+        ExtractedToolCallInformation, FunctionCall, ToolCall,
+    )
 from vllm.logger import init_logger
 from vllm.sampling_params import StructuredOutputsParams
 from vllm.tokenizers import TokenizerLike

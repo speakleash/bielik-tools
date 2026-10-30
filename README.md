@@ -33,14 +33,19 @@ Choose the tool parser file matching your vLLM version:
 
 | vLLM version | Tool parser | Reasoning parser |
 |---|---|---|
-| ≥ 0.24.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
-| 0.15.0 – 0.23.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
+| ≥ 0.19.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
+| 0.15.0 – 0.18.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.13.0 – 0.14.x | `bielik_vllm_tool_parser_v0.13.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
 | ≤ 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
 
-The 0.24.0 tool-parser cut is the vLLM `ToolParser` API change
+The 0.19.0 tool-parser cut is the vLLM `ToolParser` API change
 (`__init__(tokenizer, tools=…)` plus `supports_required_and_named`).
-Reasoning parsers are unchanged across 0.15+.
+The default tool and reasoning parsers support both the older
+`openai.engine.protocol` and newer `generate.base.protocol` module layouts.
+Parser imports, construction and non-streaming extraction are tested on vLLM
+0.32.0; historical constructor signatures were checked against the upstream
+0.15.0–0.24.0 source. This is not an end-to-end serving guarantee for every
+intermediate version. Legacy parser files remain available unchanged.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
