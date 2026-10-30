@@ -44,8 +44,11 @@ The default tool and reasoning parsers support both the older
 `openai.engine.protocol` and newer `generate.base.protocol` module layouts.
 Parser imports, construction and non-streaming extraction are tested on vLLM
 0.32.0; historical constructor signatures were checked against the upstream
-0.15.0–0.24.0 source. This is not an end-to-end serving guarantee for every
-intermediate version. Legacy parser files remain available unchanged.
+0.15.0–0.24.0 source. Import, construction and extraction smoke tests also pass
+using the v0.12, v0.13, v0.15, v0.18, v0.19 and v0.20 source trees with shared
+PyTorch/CUDA dependencies (Transformers 4.57.6). Reasoning is tested from v0.13. This is not an end-to-end serving guarantee for every
+intermediate version. Legacy parser files remain available; the <=0.12 variant also handles the
+relocation of `MistralTokenizer` with a fallback to its original location.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
