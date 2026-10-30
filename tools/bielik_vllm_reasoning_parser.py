@@ -27,6 +27,14 @@ class BielikReasoningParser(ReasoningParser):
     is returned as content, not reasoning.
     """
 
+    @property
+    def reasoning_start_str(self) -> str:
+        return "<think>"
+
+    @property
+    def reasoning_end_str(self) -> str:
+        return "</think>"
+
     def __init__(self, tokenizer: TokenizerLike, *args, **kwargs):
         super().__init__(tokenizer, *args, **kwargs)
 
