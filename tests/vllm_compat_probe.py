@@ -33,8 +33,8 @@ tok=PreTrainedTokenizerFast(tokenizer_object=backend)
 if a.kind=='tool':
  suffix='_v0.12.0' if v <= (0,12,0) else '_v0.13.0' if v < (0,15,0) else '_v0.15.0' if v < (0,19,0) else ''
 else:
- if v <= (0,12,0):
-  print(json.dumps({'skipped':'README does not claim reasoning support on <=0.12'}));sys.exit()
+ if v < (0,12,0):
+  print(json.dumps({'skipped':'README does not claim reasoning support below 0.12'}));sys.exit()
  suffix='_v0.13.0' if v < (0,15,0) else ''
 path=root/'tools'/f'bielik_vllm_{a.kind}_parser{suffix}.py'
 spec=importlib.util.spec_from_file_location('matrix_plugin',path)
