@@ -83,7 +83,11 @@ def test_complete_arguments_independent_of_chunking(tokenizer, request_data, arg
     deltas = collect(parser, tokenizer, request_data, text, batch)
     assert flatten(deltas) == [('calc', arguments)]
     assert not ''.join(d.content or '' for d in deltas)
-    assert parser.get_remaining_unstreamed_args() == ''
+    assert len(parser.prev_tool_call_arr) == len(parser.streamed_args_for_tool)
+    for call, streamed in zip(parser.prev_tool_call_arr, parser.streamed_args_for_tool):
+        assert json.loads(streamed) == call['arguments']
+    if hasattr(parser, 'get_remaining_unstreamed_args'):
+        assert parser.get_remaining_unstreamed_args() == ''
 
 
 @pytest.mark.parametrize('batch', [1, 3, 17, 100000])
@@ -95,7 +99,11 @@ def test_text_and_multiple_calls_are_never_lost_or_duplicated(tokenizer, request
     assert flatten(deltas) == [('calc', {'x': 1}), ('calc', {})]
     assert ''.join(d.content or '' for d in deltas) == 'Before \nBetween  After'
     assert len({c.id for d in deltas for c in d.tool_calls or []}) == 2
-    assert parser.get_remaining_unstreamed_args() == ''
+    assert len(parser.prev_tool_call_arr) == len(parser.streamed_args_for_tool)
+    for call, streamed in zip(parser.prev_tool_call_arr, parser.streamed_args_for_tool):
+        assert json.loads(streamed) == call['arguments']
+    if hasattr(parser, 'get_remaining_unstreamed_args'):
+        assert parser.get_remaining_unstreamed_args() == ''
 
 
 @pytest.mark.parametrize('batch', [1, 3, 100000])
@@ -114,7 +122,12 @@ def test_incomplete_call_does_not_execute(tokenizer, request_data):
 
 @pytest.mark.parametrize('batch', [1, 3, 17, 100000])
 def test_reasoning_quote_is_not_a_tool_call(tokenizer, request_data, batch):
-    from vllm.parser.abstract_parser import DelegatingParser
+    DelegatingParser = pytest.importorskip(
+        'vllm.parser.abstract_parser',
+        reason='Unified reasoning/tool parser is unavailable on older vLLM',
+    ).DelegatingParser
+    if not hasattr(DelegatingParser, 'parse_delta'):
+        pytest.skip('This integration test requires the newer parse_delta API')
     reasoning = load_plugin('reasoning').BielikReasoningParser
     class Combined(DelegatingParser):
         reasoning_parser_cls = reasoning
