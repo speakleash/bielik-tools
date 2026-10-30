@@ -36,10 +36,11 @@ Choose the tool parser file matching your vLLM version:
 | ≥ 0.19.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.15.0 – 0.18.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.13.0 – 0.14.x | `bielik_vllm_tool_parser_v0.13.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
-| ≤ 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
+| 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
+| < 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
 
 The 0.19.0 tool-parser cut is the vLLM `ToolParser` API change
-(`__init__(tokenizer, tools=…)` plus `supports_required_and_named`).
+(`__init__(tokenizer, tools=…)`).
 The default tool and reasoning parsers support both the older
 `openai.engine.protocol` and newer `generate.base.protocol` module layouts.
 Parser imports, construction and non-streaming extraction are tested on vLLM
@@ -52,6 +53,11 @@ rejects Transformers 4. Reasoning is tested from v0.13.
 This is not an end-to-end serving guarantee for every intermediate version.
 Legacy parser files remain available; the <=0.12 variant also handles the
 relocation of `MistralTokenizer` with a fallback to its original location.
+The reasoning parser with a `_v0.13.0` suffix also works on vLLM 0.12.0.
+For older vLLM releases, explicitly send `skip_special_tokens: false` when
+using reasoning, especially in non-streaming requests.
+Versions below 0.12 retain the legacy tool parser but are not covered by the
+GPU validation matrix.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
