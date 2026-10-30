@@ -65,8 +65,8 @@ def chat_completion_request(messages, reasoning_effort: str = "none"):
     """Stream a chat completion.
 
     Uses v3.1 ``reasoning_effort`` (none|low|medium|high|max) via
-    ``chat_template_kwargs``. Requires the Bielik v3.1 reasoning parser
-    plugin when effort != none.
+    ``chat_template_kwargs``, plus ``enable_thinking`` for the advanced
+    template and legacy reasoning parser.
     """
     try:
         kwargs = {
@@ -74,7 +74,10 @@ def chat_completion_request(messages, reasoning_effort: str = "none"):
             "messages": messages,
             "stream": True,
             "extra_body": {
-                "chat_template_kwargs": {"reasoning_effort": reasoning_effort},
+                "chat_template_kwargs": {
+                    "reasoning_effort": reasoning_effort,
+                    "enable_thinking": reasoning_effort != "none",
+                },
             },
         }
         if reasoning_effort != "none":

@@ -11,7 +11,31 @@ git clone https://github.com/speakleash/bielik-tools.git
 cd bielik-tools
 ```
 
-Explore available tools and examples in their respective subdirectories.
+Install the client dependencies for the basic examples (tool calling, reasoning
+and structured outputs) in your Python environment:
+
+```bash
+python -m pip install -r examples/requirements.txt
+```
+
+Install vLLM separately in the serving environment, selecting a release and
+hardware build appropriate for your machine. The client examples can run in a
+separate environment without vLLM or model weights.
+
+Configure the basic examples to use the model name exposed by your server:
+
+```bash
+export VLLM_BASE_URL=http://127.0.0.1:8000/v1
+export VLLM_MODEL=speakleash/Bielik-11B-v3.0-Instruct
+export VLLM_API_KEY=EMPTY  # replace if the server requires a key
+```
+
+`VLLM_MODEL` must match the served model ID (`--served-model-name` when used).
+The examples otherwise default to `step72`, which is intended for local testing.
+Environment variables take precedence over optional `.env` files read by
+`examples/_vllm_env.py`. CrewAI uses its separate configuration below.
+
+All server commands below assume the repository root is the working directory.
 
 ## Structured Outputs
 
@@ -22,11 +46,11 @@ Bielik models have been trained to generate structured outputs. Once the model i
 To use function/tool calling, you need to enable the extended chat template. This can be done using the provided [advanced chat template](https://github.com/speakleash/bielik-tools/blob/main/tools/bielik_advanced_chat_template.jinja) and [tool parser](https://github.com/speakleash/bielik-tools/blob/main/tools/bielik_vllm_tool_parser.py). Start vLLM with the following command:
 
 ```bash
-vllm serve Bielik-11B-v2.5-Instruct \
+vllm serve speakleash/Bielik-11B-v3.0-Instruct \
     --enable-auto-tool-choice \
-    --tool-parser-plugin ./bielik-tools/tools/bielik_vllm_tool_parser.py \
+    --tool-parser-plugin ./tools/bielik_vllm_tool_parser.py \
     --tool-call-parser bielik \
-    --chat-template ./bielik-tools/tools/bielik_advanced_chat_template.jinja
+    --chat-template ./tools/bielik_advanced_chat_template.jinja
 ```
 
 Choose the tool parser file matching your vLLM version:
@@ -44,20 +68,45 @@ Reasoning parsers are unchanged across 0.15+.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
+## Template and parser variants
+
+The commands in this README use the advanced template and the parser files
+without a `_v3.1` suffix. The `_v3.1.py` parsers are a separate pair for the
+v3.1 chat template; they do not select or install that template automatically.
+Use `--chat-template` to supply the matching template explicitly. Load only one
+tool parser and one reasoning parser: the variants register the same name,
+`bielik`.
+
+The compatibility table describes vLLM API variants, not Bielik model versions.
+
 ## Reasoning
 
 Reasoning is available in Bielik 11B v2.5 Instruct and Bielik v3.0 Instruct models. Enabling reasoning allows the model to better handle complex questions by expanding its reasoning capabilities. To try it out, start vLLM with the following command:
 
 ```bash
 vllm serve speakleash/Bielik-11B-v3.0-Instruct \
-    --chat-template ./bielik-tools/tools/bielik_advanced_chat_template.jinja \
-    --reasoning-parser-plugin ./bielik-tools/tools/bielik_vllm_reasoning_parser.py \
+    --chat-template ./tools/bielik_advanced_chat_template.jinja \
+    --reasoning-parser-plugin ./tools/bielik_vllm_reasoning_parser.py \
     --reasoning-parser bielik
 ```
+
+For the advanced template, request thinking explicitly in the API call:
+`chat_template_kwargs={"enable_thinking": true}` (JSON; use `True` in Python).
+The reasoning parser separates generated reasoning from the final answer;
+selecting a parser alone does not add the advanced template's thinking prompt.
+The v3.1 pair instead supports `reasoning_effort` in `chat_template_kwargs`.
+`reasoning_streaming.py` sends both settings consistently, so it works with
+either pair.
 
 Then, run [reasoning\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/reasoning_streaming.py) to see how the model performs in reasoning mode.
 
 ## Multi-Agent with CrewAI
+
+Install the additional CrewAI example dependencies:
+
+```bash
+python -m pip install -r examples/requirements-crewai.txt
+```
 
 For this example to work you need Tavily API key. Create `.env` file with contents:
 
@@ -73,12 +122,12 @@ Run vllm
 ```bash
 vllm serve speakleash/Bielik-11B-v3.0-Instruct \
     --enable-auto-tool-choice \
-    --tool-parser-plugin ./bielik-tools/tools/bielik_vllm_tool_parser.py \
+    --tool-parser-plugin ./tools/bielik_vllm_tool_parser.py \
     --tool-call-parser bielik \
-    --chat-template ./bielik-tools/tools/bielik_advanced_chat_template.jinja \
+    --chat-template ./tools/bielik_advanced_chat_template.jinja \
     --port 8000 --host 0.0.0.0 \
     --api-key token-abc123
 ```
 
-Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/main/examples/crewai_to_file.py)  
-Final contens of report will be placed in `bielik_output/atrakcje.md` 
+Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/main/examples/crewai_to_file.py)
+Final contents of the report will be placed in `bielik_output/atrakcje.md`
