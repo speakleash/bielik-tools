@@ -33,11 +33,17 @@ Choose the tool parser file matching your vLLM version:
 
 | vLLM version | Tool parser | Reasoning parser |
 |---|---|---|
-| ≥ 0.19.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
+| ≥ 0.19.0, except 0.20.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
+| 0.20.0 | [native combined plugin](compatibility/vllm-0.20.md) | same combined plugin |
 | 0.15.0 – 0.18.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.13.0 – 0.14.x | `bielik_vllm_tool_parser_v0.13.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
 | 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
 | < 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
+
+For vLLM 0.20.0 use the native combined plugin linked above; no vLLM runtime
+patch is needed. For template v3.2 the supported target is vLLM **0.24.0+**
+(the modern runtime checks cover 0.24.0 and 0.32.0); legacy 0.20 adapters are
+not a v3.2 support path.
 
 The 0.19.0 tool-parser cut is the vLLM `ToolParser` API change
 (`__init__(tokenizer, tools=…)`).
