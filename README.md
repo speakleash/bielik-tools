@@ -83,3 +83,20 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
 
 Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/main/examples/crewai_to_file.py)  
 Final contens of report will be placed in `bielik_output/atrakcje.md` 
+
+### v3.1 streaming tool calls
+
+`tools/bielik_vllm_tool_parser_v3.1.py` buffers a tag-wrapped tool call until
+`</tool_call>`, then emits its name and complete JSON arguments together. This
+makes the result independent of stream chunk boundaries, including a complete
+call or several calls in one chunk. Text outside calls remains incremental.
+Malformed completed blocks are preserved as text rather than executed; incomplete
+calls are not emitted as tools. Tool arguments are delayed until the closing tag
+instead of being exposed as potentially incomplete JSON fragments.
+
+Parser-only regression tests (vLLM environment plus pytest; no weights or model
+server needed):
+
+```bash
+python -m pytest -q tests/test_streaming_tool_parser_v31.py
+```
