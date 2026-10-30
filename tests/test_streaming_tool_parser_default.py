@@ -1,5 +1,6 @@
 """Parser-only tests: no model weights, server, or GPU execution required."""
 import importlib.util
+import inspect
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -133,6 +134,11 @@ def test_reasoning_quote_is_not_a_tool_call(tokenizer, request_data, batch):
         reasoning_parser_cls = reasoning
         tool_parser_cls = TOOL
     parser = Combined(tokenizer, request_data.tools, chat_template_kwargs={'reasoning_effort': 'low'})
+    # Older DelegatingParser leaves plugin construction to _WrappedParser.
+    if parser.reasoning_parser is None:
+        parser.reasoning_parser = reasoning(tokenizer, chat_template_kwargs={'reasoning_effort': 'low'})
+    if parser.tool_parser is None:
+        parser.tool_parser = TOOL(tokenizer, request_data.tools)
     text = ('Example <tool_call>{"name":"fake","arguments":{}}</tool_call> only.'
             '</think><tool_call>{"name":"calc","arguments":{"x":2}}</tool_call>')
     ids = tokenizer.encode(text, add_special_tokens=False)
@@ -140,8 +146,11 @@ def test_reasoning_quote_is_not_a_tool_call(tokenizer, request_data, batch):
     prompt = tokenizer.encode('<think>', add_special_tokens=False)
     for pos in range(0, len(ids), batch):
         current = tokenizer.decode(ids[:pos + batch], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+        options = {'prompt_token_ids': prompt}
+        if 'finished' in inspect.signature(parser.parse_delta).parameters:
+            options['finished'] = pos + batch >= len(ids)
         delta = parser.parse_delta(current[len(previous):], ids[pos:pos + batch], request_data,
-                                   prompt_token_ids=prompt, finished=pos + batch >= len(ids))
+                                   **options)
         if delta:
             deltas.append(delta)
         previous = current
