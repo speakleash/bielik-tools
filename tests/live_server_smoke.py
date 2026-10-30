@@ -16,7 +16,18 @@ parser.add_argument("--base-url", default="http://127.0.0.1:8000")
 parser.add_argument("--model", default="bielik-matrix")
 parser.add_argument("--output-dir", type=Path, default=Path("/tmp/bielik-live-smoke"))
 parser.add_argument("--skip-reasoning", action="store_true")
-parser.add_argument("--timeout", type=float, default=600, help="Seconds per request, including cold kernel preparation")
+parser.add_argument(
+    "--timeout",
+    type=float,
+    default=600,
+    help="Seconds per request, including cold kernel preparation",
+)
+parser.add_argument(
+    "--reasoning-max-tokens",
+    type=int,
+    default=384,
+    help="Output budget for reasoning probes; increase for verbose templates",
+)
 args = parser.parse_args()
 base = args.base_url.rstrip("/")
 if not base.endswith("/v1"):
@@ -129,7 +140,7 @@ def payload(text, effort="none", stream=False):
         "messages": [{"role": "user", "content": text}],
         "temperature": 0,
         "skip_special_tokens": False,
-        "max_tokens": 1024 if effort != "none" else 384,
+        "max_tokens": args.reasoning_max_tokens if effort != "none" else 384,
         "stream": stream,
         "chat_template_kwargs": {
             "reasoning_effort": effort,
