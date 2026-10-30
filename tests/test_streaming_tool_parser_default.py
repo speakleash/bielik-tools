@@ -1,5 +1,6 @@
 """Parser-only tests: no model weights, server, or GPU execution required."""
 import importlib.util
+import importlib.metadata
 import inspect
 import os
 import json
@@ -26,6 +27,15 @@ def load_plugin(kind):
     spec.loader.exec_module(module)
     return module
 
+
+
+@lru_cache(maxsize=None)
+def load_unified_020():
+    path = ROOT / 'tools' / 'bielik_vllm_parser_v0.20.0.py'
+    spec = importlib.util.spec_from_file_location('bielik_native020_test', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 TOOL = load_plugin('tool').BielikToolParser
 
@@ -143,7 +153,17 @@ def test_reasoning_quote_is_not_a_tool_call(tokenizer, request_data, batch):
     class Combined(DelegatingParser):
         reasoning_parser_cls = reasoning
         tool_parser_cls = TOOL
-    parser = Combined(tokenizer, request_data.tools, chat_template_kwargs={'reasoning_effort': 'low'})
+    if importlib.metadata.version('vllm').split('+')[0] == '0.20.0':
+        native = load_unified_020()
+        from vllm.parser.parser_manager import ParserManager
+        selected = ParserManager.get_parser(tool_parser_name='bielik_020',
+                                            reasoning_parser_name='bielik_020',
+                                            enable_auto_tools=True)
+        assert selected is native.Bielik020Parser
+        parser = selected(tokenizer, request_data.tools,
+                          chat_template_kwargs={'reasoning_effort': 'low'})
+    else:
+        parser = Combined(tokenizer, request_data.tools, chat_template_kwargs={'reasoning_effort': 'low'})
     # Older DelegatingParser leaves plugin construction to _WrappedParser.
     if parser.reasoning_parser is None:
         parser.reasoning_parser = reasoning(tokenizer, chat_template_kwargs={'reasoning_effort': 'low'})
