@@ -68,6 +68,8 @@ def test_real_vllm_plugin(kind):
     else:
         for thinking in [False, True]:
             parser = module.BielikReasoningParser(tokenizer, chat_template_kwargs={'enable_thinking': thinking})
+            assert parser.reasoning_start_str == '<think>'
+            assert parser.reasoning_end_str == '</think>'
             text = '<think>analysis</think>answer'
             reasoning, content = parser.extract_reasoning(text, request)
             assert (reasoning, content) == (('analysis', 'answer') if thinking else (None, text))
