@@ -1,5 +1,6 @@
 """
-This parser works with vLLM <=0.12.0. For newer vLLM versions, use bielik_vllm_tool_parser.py
+Legacy tool parser for vLLM <=0.12.0.
+For newer releases, select the version-specific file listed in README.md.
 """
 import json
 import re
