@@ -15,7 +15,13 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               FunctionCall, ToolCall)
 from vllm.entrypoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
 from vllm.logger import init_logger
-from vllm.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
+from vllm.transformers_utils.tokenizer import AnyTokenizer
+try:
+    from vllm.tokenizers.mistral import MistralTokenizer
+except ModuleNotFoundError as exc:
+    if not exc.name.startswith("vllm.tokenizers"):
+        raise
+    from vllm.transformers_utils.tokenizer import MistralTokenizer
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
