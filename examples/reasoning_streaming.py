@@ -74,6 +74,7 @@ def chat_completion_request(messages, reasoning_effort: str = "none"):
             "messages": messages,
             "stream": True,
             "extra_body": {
+                "skip_special_tokens": False,
                 "chat_template_kwargs": {
                     "reasoning_effort": reasoning_effort,
                     "enable_thinking": reasoning_effort != "none",

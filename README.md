@@ -92,6 +92,11 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
 
 For the advanced template, request thinking explicitly in the API call:
 `chat_template_kwargs={"enable_thinking": true}` (JSON; use `True` in Python).
+Send `skip_special_tokens: false` alongside `chat_template_kwargs` in the
+request body (`extra_body` with the OpenAI Python client). Older vLLM releases
+can strip `</think>` before non-streaming parsing otherwise, merging the final
+answer into reasoning. The example sets this flag explicitly.
+
 The reasoning parser separates generated reasoning from the final answer;
 selecting a parser alone does not add the advanced template's thinking prompt.
 The v3.1 pair instead supports `reasoning_effort` in `chat_template_kwargs`.
