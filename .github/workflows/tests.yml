@@ -1,0 +1,115 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  # vLLM release the tests run against. tools/bielik_vllm_tool_parser.py
+  # targets vLLM >= 0.24; 0.25.1 is the version it was verified with locally.
+  VLLM_VERSION: "0.25.1"
+  # Exact torch stack required by vllm==0.25.1 (see its Requires-Dist).
+  # Update together with VLLM_VERSION.
+  TORCH_VERSION: "2.11.0"
+  TORCHVISION_VERSION: "0.26.0"
+  TORCHAUDIO_VERSION: "2.11.0"
+  # vllm requires torchcodec>=0.14; 0.15.0 is the build paired with
+  # torch 2.11 in the locally verified vLLM 0.25.1 environment.
+  TORCHCODEC_VERSION: "0.15.0"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Byte-compile Python sources
+        run: python -m py_compile tools/*.py examples/*.py
+
+      - name: Install Jinja2
+        run: python -m pip install "jinja2>=3.1,<4"
+
+      - name: Render-check chat templates
+        run: python scripts/check_templates.py
+
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          # The repo has no requirements file; the pinned versions live in
+          # this workflow, so key the pip cache on it.
+          cache-dependency-path: .github/workflows/tests.yml
+
+      # The vLLM wheel on PyPI depends on CUDA torch, which drags in a few GB
+      # of nvidia-* libraries (cuBLAS, cuDNN, NCCL, cuSPARSE, cuFFT, ...).
+      # The tests only exercise the parser logic with a fake tokenizer, so a
+      # CPU runner is enough. Installing the matching +cpu torch wheels first
+      # satisfies vllm's exact "torch==X" pins (PEP 440 ignores the +cpu
+      # local label), so the second pip call keeps them and skips the CUDA
+      # math libraries. torchcodec must come from the CPU index as well: the
+      # PyPI build may link against libc10_cuda.so, and vLLM imports it while
+      # loading its OpenAI protocol module. vLLM's remaining CUDA-only deps
+      # (flashinfer, cutlass-dsl, triton) are still installed but never
+      # loaded; without an NVIDIA driver vLLM falls back to its
+      # UnspecifiedPlatform and the protocol/parser modules import fine.
+      - name: Install CPU-only torch
+        if: hashFiles('tests/**/*.py') != ''
+        run: >-
+          python -m pip install
+          "torch==${TORCH_VERSION}"
+          "torchvision==${TORCHVISION_VERSION}"
+          "torchaudio==${TORCHAUDIO_VERSION}"
+          "torchcodec==${TORCHCODEC_VERSION}"
+          --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install vLLM and pytest
+        if: hashFiles('tests/**/*.py') != ''
+        run: python -m pip install "vllm==${VLLM_VERSION}" pytest
+
+      # tests/conftest.py skips everything when vLLM cannot be imported,
+      # which pytest reports as exit code 5 ("no tests collected"). Import
+      # the parser explicitly so a broken environment fails the job instead
+      # of being masked by the exit-code-5 allowance below.
+      - name: Check that vLLM and the tool parser import
+        if: hashFiles('tests/**/*.py') != ''
+        shell: python
+        run: |
+          import importlib.util
+
+          import vllm
+
+          path = "tools/bielik_vllm_tool_parser.py"
+          spec = importlib.util.spec_from_file_location("bielik_vllm_tool_parser", path)
+          spec.loader.exec_module(importlib.util.module_from_spec(spec))
+          print(f"vLLM {vllm.__version__}: {path} imported OK")
+
+      - name: Run pytest
+        if: hashFiles('tests/**/*.py') != ''
+        # Exit code 5 means "no tests collected"; do not fail on it.
+        run: python -m pytest tests -q -p no:cacheprovider || [ $? -eq 5 ]
+
+      - name: No tests found
+        if: hashFiles('tests/**/*.py') == ''
+        run: echo "::notice::No tests/ directory with Python files; skipping vLLM install and pytest."
