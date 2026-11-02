@@ -57,6 +57,15 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
 
 Then, run [reasoning\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/reasoning_streaming.py) to see how the model performs in reasoning mode.
 
+## Tests
+
+Unit tests for the tool parser live in `tests/`. They import vLLM, so run them in an environment where vLLM (>= 0.24) is installed; no GPU or model download is needed (a fake tokenizer is used):
+
+```bash
+pip install pytest
+python -m pytest tests -q
+```
+
 ## Multi-Agent with CrewAI
 
 For this example to work you need Tavily API key. Create `.env` file with contents:
