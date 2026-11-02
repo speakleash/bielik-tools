@@ -15,7 +15,9 @@ from vllm.tokenizers import TokenizerLike
 from vllm.logger import init_logger
 
 
-logger = init_logger(__name__)
+# Log under the "vllm" namespace: plugins are loaded by file path, so
+# __name__ falls outside vLLM's configured logger hierarchy.
+logger = init_logger("vllm.plugins.bielik_reasoning_parser")
 _missing_think_tokens_warned = False
 
 
