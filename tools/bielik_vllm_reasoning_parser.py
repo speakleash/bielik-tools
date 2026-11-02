@@ -9,6 +9,20 @@ from vllm.reasoning import ReasoningParser, ReasoningParserManager
 from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
 from vllm.reasoning.identity_reasoning_parser import IdentityReasoningParser
 from vllm.tokenizers import TokenizerLike
+from vllm.logger import init_logger
+
+
+logger = init_logger(__name__)
+_missing_think_tokens_warned = False
+
+
+def _warn_missing_think_tokens() -> None:
+    global _missing_think_tokens_warned
+    if not _missing_think_tokens_warned:
+        _missing_think_tokens_warned = True
+        logger.warning(
+            "Bielik reasoning parser: the tokenizer has no <think>/</think> "
+            "special tokens; thinking output is returned as content.")
 
 
 @ReasoningParserManager.register_module("bielik")
@@ -28,9 +42,16 @@ class BielikReasoningParser(ReasoningParser):
         chat_kwargs = kwargs.get("chat_template_kwargs") or {}
         enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
 
+        self._parser = None
         if enable_thinking:
-            self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
-        else:
+            try:
+                self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
+            except RuntimeError:
+                # Tokenizers without <think>/</think> special tokens (e.g.
+                # Bielik-4.5B-v3.0) cannot be split by token id. Return the
+                # whole output as content instead of failing the request.
+                _warn_missing_think_tokens()
+        if self._parser is None:
             self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
