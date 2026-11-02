@@ -23,8 +23,9 @@ logger = init_logger(__name__)
 @ToolParserManager.register_module("bielik")
 class BielikToolParser(ToolParser):
 
-    def __init__(self, tokenizer: TokenizerLike):
-        super().__init__(tokenizer)
+    def __init__(self, tokenizer: TokenizerLike, *args, **kwargs):
+        # Forward extra args (e.g. tools=) for vLLM builds that pass them.
+        super().__init__(tokenizer, *args, **kwargs)
 
         if isinstance(self.model_tokenizer, MistralTokenizer):
             logger.warning("Detected Mistral tokenizer when using a Bielik model")
