@@ -316,9 +316,17 @@ class BielikToolParser(ToolParser):
 
             # last case -- we have an update to existing arguments.
             elif cur_arguments and prev_arguments:
-                if isinstance(delta_text, str) and len(delta_text.rstrip(
-                )) >= 1 and delta_text.rstrip()[-1] == '}':
-                    delta_text = delta_text.rstrip()[:-1]
+                # Drop only the brace closing the outer tool-call object;
+                # braces closing the arguments themselves must be streamed
+                # (Bielik emits "}" "}" as separate tokens).
+                if isinstance(delta_text, str) and delta_text.rstrip().endswith('}'):
+                    try:
+                        json.loads(tool_call_portion)
+                        closes_tool_call = True
+                    except (TypeError, ValueError):
+                        closes_tool_call = False
+                    if closes_tool_call:
+                        delta_text = delta_text.rstrip()[:-1]
 
                 logger.debug("got diff %s", delta_text)
 
