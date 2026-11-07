@@ -118,3 +118,11 @@ def test_prompt_with_think_tags_in_system_text_is_not_reasoning_end():
     assert parser.is_reasoning_end(prompt) is False
     assert parser.is_reasoning_end(prompt + [10, 1, 11, 1]) is True
     assert parser.is_reasoning_end([10, 1, 11]) is True  # no turn marker
+
+
+def test_adjust_request_untouched_on_missing_think_tokens_fallback():
+    module = _load("bielik_vllm_reasoning_parser.py")
+    request = type("Request", (), {"skip_special_tokens": True})()
+    parser = module.BielikReasoningParser(
+        FakeTokenizer(NO_THINK_VOCAB), chat_template_kwargs={"enable_thinking": True})
+    assert parser.adjust_request(request).skip_special_tokens is True

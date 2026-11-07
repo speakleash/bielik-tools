@@ -77,6 +77,8 @@ class BielikReasoningParser(ReasoningParser):
         # Some tokenizers (e.g. Bielik v3.0) flag <think>/</think> as special
         # tokens. With the default skip_special_tokens=True they are dropped
         # from the text and reasoning cannot be separated from the answer.
+        # This overrides an explicit skip_special_tokens=True (same trade-off
+        # as the Bielik tool parser).
         if self._thinking and hasattr(request, "skip_special_tokens"):
             request.skip_special_tokens = False
         return request
