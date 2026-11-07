@@ -147,6 +147,70 @@ instead of treating reasoning as the answer.
 
 Then, run [reasoning\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/reasoning_streaming.py) to see how the model performs in reasoning mode.
 
+## llama.cpp (GGUF)
+
+GGUF builds of Bielik can be served with `llama-server` from [llama.cpp](https://github.com/ggml-org/llama.cpp) using the same advanced chat template. Official GGUF repositories include [speakleash/Bielik-11B-v3.0-Instruct-GGUF](https://huggingface.co/speakleash/Bielik-11B-v3.0-Instruct-GGUF) and [speakleash/Bielik-4.5B-v3.0-Instruct-GGUF](https://huggingface.co/speakleash/Bielik-4.5B-v3.0-Instruct-GGUF).
+
+The commands below are for recent llama.cpp builds. Flag names follow the current [server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md); older builds may not support all of them.
+
+```bash
+llama-server \
+    -hf speakleash/Bielik-11B-v3.0-Instruct-GGUF:Q4_K_M \
+    --jinja \
+    --chat-template-file ./bielik-tools/tools/bielik_advanced_chat_template.jinja \
+    --chat-template-kwargs '{"enable_thinking": false}' \
+    --port 8080
+```
+
+Use `-m /path/to/model.gguf` instead of `-hf` to load a local file. `--chat-template-file` overrides the template embedded in the GGUF metadata. `--jinja` enables the Jinja template engine, which tool calling requires; recent builds enable it by default.
+
+### Tool calling
+
+With `--jinja`, `llama-server` exposes OpenAI-style function calling on `/v1/chat/completions` ([function calling docs](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)). Send `tools` as you would to the OpenAI API, or point the [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) example at the server:
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "messages": [{"role": "user", "content": "Jaka jest pogoda w Krakowie?"}],
+      "tools": [{
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      }]
+    }'
+```
+
+- llama.cpp selects the tool-call parser from the template; if it does not recognise the format, it falls back to a generic handler (the log shows `Chat format: Generic`).
+- Multiple tool calls in one turn are disabled by default; send `"parallel_tool_calls": true` to enable them.
+- The template has a stricter instruction for `tool_choice == "required"`, but llama.cpp does not pass the request's `tool_choice` field to the template. To render that instruction, also send `"chat_template_kwargs": {"tool_choice": "required"}`.
+
+### Reasoning
+
+The template reads the `enable_thinking` variable. When it is `true`, a Polish instruction to reason inside `<think>…</think>` is appended to the system prompt. When it is `false`, an empty `<think></think>` block is pre-filled. llama.cpp always sets this variable, and with the default `--reasoning auto` its value depends on how llama.cpp analyses the template. Set it explicitly instead:
+
+- for the whole server: `--chat-template-kwargs '{"enable_thinking": true}'`, or `--reasoning off` to disable thinking;
+- per request: `"chat_template_kwargs": {"enable_thinking": true}`.
+
+`--reasoning-format` controls how the thoughts are returned. `deepseek` puts them in `message.reasoning_content`, and `none` leaves them unparsed in `message.content`.
+
+## Ollama
+
+Ollama templates use Go `text/template` syntax, not Jinja ([Ollama template docs](https://github.com/ollama/ollama/blob/main/docs/template.mdx)), so `bielik_advanced_chat_template.jinja` cannot be used with Ollama as is. You can run a GGUF directly from Hugging Face:
+
+```bash
+ollama run hf.co/speakleash/Bielik-11B-v3.0-Instruct-GGUF:Q4_K_M
+```
+
+In this case Ollama picks a chat template from a list of commonly used templates, based on the `tokenizer.chat_template` metadata in the GGUF ([Hugging Face docs](https://huggingface.co/docs/hub/ollama)). The tool calling and `enable_thinking` behaviour described above is not guaranteed there. For tool calling and reasoning, use vLLM or llama.cpp with the template from this repository.
+
 ## Multi-Agent with CrewAI
 
 Install the additional CrewAI example dependencies:
