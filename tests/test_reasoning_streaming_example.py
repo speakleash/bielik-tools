@@ -9,8 +9,11 @@ from unittest.mock import Mock
 import pytest
 
 
-@pytest.fixture
-def example(monkeypatch):
+@pytest.fixture(params=[False, True], ids=["default-environment", "no-termcolor"])
+def example(monkeypatch, request):
+    if request.param:
+        # Reproduce a minimal CI environment even when termcolor is installed.
+        monkeypatch.setitem(sys.modules, "termcolor", None)
     client = Mock()
     monkeypatch.setitem(
         sys.modules,
