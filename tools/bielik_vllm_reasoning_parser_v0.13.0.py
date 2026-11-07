@@ -7,6 +7,22 @@ from vllm.reasoning import ReasoningParser, ReasoningParserManager
 from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
 from vllm.reasoning.identity_reasoning_parser import IdentityReasoningParser
 from vllm.tokenizers import TokenizerLike
+from vllm.logger import init_logger
+
+
+# Log under the "vllm" namespace: plugins are loaded by file path, so
+# __name__ falls outside vLLM's configured logger hierarchy.
+logger = init_logger("vllm.plugins.bielik_reasoning_parser")
+_missing_think_tokens_warned = False
+
+
+def _warn_missing_think_tokens() -> None:
+    global _missing_think_tokens_warned
+    if not _missing_think_tokens_warned:
+        _missing_think_tokens_warned = True
+        logger.warning(
+            "Bielik reasoning parser: the tokenizer has no <think>/</think> "
+            "special tokens; thinking output is returned as content.")
 
 
 @ReasoningParserManager.register_module("bielik")
@@ -20,15 +36,30 @@ class BielikReasoningParser(ReasoningParser):
     is returned as content, not reasoning.
     """
 
+    @property
+    def reasoning_start_str(self) -> str:
+        return "<think>"
+
+    @property
+    def reasoning_end_str(self) -> str:
+        return "</think>"
+
     def __init__(self, tokenizer: TokenizerLike, *args, **kwargs):
         super().__init__(tokenizer, *args, **kwargs)
 
         chat_kwargs = kwargs.get("chat_template_kwargs") or {}
         enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
 
+        self._parser = None
         if enable_thinking:
-            self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
-        else:
+            if (self.vocab.get("<think>") is None
+                    or self.vocab.get("</think>") is None):
+                # Only missing delimiters trigger the content fallback. Other
+                # initialization errors must surface instead of being hidden.
+                _warn_missing_think_tokens()
+            else:
+                self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
+        if self._parser is None:
             self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:

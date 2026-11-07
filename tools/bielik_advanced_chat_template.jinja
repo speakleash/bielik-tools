@@ -16,14 +16,14 @@
         {%- set system_message = system_message + "\n\n" %}
     {%- endif %}
 
-    {%- set system_message = system_message + """
+    {%- set system_message = system_message + "
     Twoim zadaniem jest dokładne przeanalizowanie pytań krok po kroku, wyraźnie pokazując swój proces rozumowania przed udzieleniem ostatecznej odpowiedzi.
     Ustrukturyzuj swoją odpowiedź w następujący sposób:
     użyj znaczników <think> i </think>, aby pokazać szczegółowe etapy rozumowania,
     w tym analizę, podsumowanie, burzę mózgów, weryfikację dokładności,
     poprawę błędów i ponowne przeanalizowanie wcześniejszych punktów, np. <think>{myśli krok po kroku}</think>.
     Następnie wyraźnie przedstaw ostateczną, dokładną odpowiedź w oparciu o swoje rozumowanie. Odpowiadaj w języku polskim.
-    """ %}
+    " %}
 {%- endif %}
 
 {{- bos_token }}
