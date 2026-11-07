@@ -7,8 +7,8 @@ reasoning has already ended in the prompt, as vLLM does for every request.
 A mismatch means the parser will put the answer into ``reasoning`` (or the
 reasoning into ``content``) for that request type.
 
-  python scripts/check_parser_template_contract.py ~/repos/models/steps_70_90_110 --family v31
-  python scripts/check_parser_template_contract.py ~/repos/models/steps_70_90_110 --family v31 \\
+  python scripts/check_parser_template_contract.py /path/to/bielik-3.2 --family v31
+  python scripts/check_parser_template_contract.py /path/to/bielik-3.2 --family v31 \\
       --template tools/bielik_v3.2_chat_template.jinja
   python scripts/check_parser_template_contract.py speakleash/Bielik-11B-v3.0-Instruct \\
       --family v30 --template tools/bielik_advanced_chat_template.jinja

@@ -22,7 +22,7 @@ reported but not counted as model issues: the grammar may forbid the
 dedicated token IDs.
 
   python scripts/diagnose_model_behaviour.py --base-url http://127.0.0.1:8000 \\
-      --model bielik --tokenizer ~/repos/models/steps_70_90_110 --family v31
+      --model bielik --tokenizer /path/to/bielik-3.2 --family v31
   python scripts/diagnose_model_behaviour.py --model bielik30 --family v30 \\
       --tokenizer speakleash/Bielik-11B-v3.0-Instruct
 

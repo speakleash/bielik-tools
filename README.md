@@ -65,8 +65,7 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
     --enable-auto-tool-choice \
     --tool-parser-plugin ./tools/bielik_vllm_tool_parser.py \
     --tool-call-parser bielik \
-    --chat-template ./tools/bielik_advanced_chat_template.jinja \
-    --exclude-tools-when-tool-choice-none
+    --chat-template ./tools/bielik_advanced_chat_template.jinja
 ```
 
 Choose the tool parser file matching your vLLM version:
@@ -240,8 +239,9 @@ To add those instructions, repeat the values in `chat_template_kwargs`, for
 example `{"tool_choice": "required"}`.
 
 With `tool_choice="none"` the tools are still rendered into the prompt, and
-the model may then write a tool call as plain text. Start the server with
-`--exclude-tools-when-tool-choice-none` to drop the tools from such requests.
+the model may then write a tool call as plain text. On vLLM 0.32 (checked)
+start the server with `--exclude-tools-when-tool-choice-none` to drop the
+tools from such requests.
 
 Tool calls are recognised from the text `<tool_call>…</tool_call>`. In
 non-streaming responses this includes tags that the model spelled with

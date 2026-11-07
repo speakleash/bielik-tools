@@ -19,8 +19,8 @@ Every configuration that is documented as supported must have a row here.
 | Model | Template | Tool parser | Reasoning parser | Thinking switch |
 |---|---|---|---|---|
 | Bielik-11B-v3.0-Instruct | `tools/bielik_advanced_chat_template.jinja` | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` | `chat_template_kwargs.enable_thinking` or top-level `reasoning_effort` |
-| Bielik 3.1 (e.g. `step_72`) | `tools/bielik_v3.2_chat_template.jinja` (or the checkpoint's own) | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` | `chat_template_kwargs.reasoning_effort` or top-level `reasoning_effort` |
-| Bielik 3.2 (e.g. `steps_70_90_110`) | `tools/bielik_v3.2_chat_template.jinja` (or the checkpoint's own) | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` | as 3.1 |
+| Bielik 3.1 | `tools/bielik_v3.2_chat_template.jinja` (or the checkpoint's own) | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` | `chat_template_kwargs.reasoning_effort` or top-level `reasoning_effort` |
+| Bielik 3.2 | `tools/bielik_v3.2_chat_template.jinja` (or the checkpoint's own) | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` | as 3.1 |
 
 Tokenizer differences matter: in 3.0 `<think>`, `</think>`, `<tool_call>` and
 `</tool_call>` are *special* tokens (dropped by `skip_special_tokens=True`). In
@@ -65,8 +65,8 @@ the decoder uses, not only Python's `re`.
 ## Level 2 – template ↔ tokenizer ↔ parser contract
 
 ```bash
-python scripts/check_parser_template_contract.py ~/repos/models/step_72 --family v31
-python scripts/check_parser_template_contract.py ~/repos/models/steps_70_90_110 --family v31
+python scripts/check_parser_template_contract.py /path/to/bielik-3.1 --family v31
+python scripts/check_parser_template_contract.py /path/to/bielik-3.2 --family v31
 python scripts/check_parser_template_contract.py speakleash/Bielik-11B-v3.0-Instruct \
     --family v30 --template tools/bielik_advanced_chat_template.jinja
 ```
@@ -91,7 +91,7 @@ register the name `bielik`). Use an FP8 checkpoint or `--quantization` on 24 GB
 GPUs. Example for Bielik 3.2:
 
 ```bash
-vllm serve ~/repos/models/steps_70_90_110 --served-model-name bielik \
+vllm serve /path/to/bielik-3.2 --served-model-name bielik \
   --quantization fp8_per_tensor --max-model-len 8192 \
   --enable-auto-tool-choice \
   --tool-parser-plugin ./tools/bielik_vllm_tool_parser.py --tool-call-parser bielik \
@@ -142,7 +142,7 @@ Run this for every new checkpoint, before the parser-level tests are trusted:
 
 ```bash
 python scripts/diagnose_model_behaviour.py --base-url http://127.0.0.1:8000 \
-    --model bielik --tokenizer ~/repos/models/steps_70_90_110 --family v31 \
+    --model bielik --tokenizer /path/to/bielik-3.2 --family v31 \
     --samples 8 --jsonl-out diag.jsonl
 ```
 
