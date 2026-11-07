@@ -60,20 +60,32 @@ Choose the tool parser file matching your vLLM version:
 | vLLM version | Tool parser | Reasoning parser |
 |---|---|---|
 | ≥ 0.19.0, except 0.20.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
-| 0.20.0 | [combined plugin (PR #21)](https://github.com/speakleash/bielik-tools/pull/21) | same combined plugin |
+| 0.20.0 | [native combined plugin](compatibility/vllm-0.20.md) | same combined plugin |
 | 0.15.0 – 0.18.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.13.0 – 0.14.x | `bielik_vllm_tool_parser_v0.13.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
 | 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
 | < 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
 
+For vLLM 0.20.0 use the native combined plugin linked above; no vLLM runtime
+patch is needed. For template v3.2 the supported target is vLLM **0.24.0+**
+(the modern runtime checks cover 0.24.0 and 0.32.0); legacy 0.20 adapters are
+not a v3.2 support path.
+
 The 0.19.0 tool-parser cut is the vLLM `ToolParser` API change
 (`__init__(tokenizer, tools=…)`).
-This matrix assumes the parser compatibility fixes in
-[PR #17](https://github.com/speakleash/bielik-tools/pull/17), including the
-vLLM 0.32 protocol-import fallback, reasoning delimiter properties and legacy
-Mistral tokenizer imports. Merge those fixes before relying on these paths;
-the client example changes alone do not provide server compatibility.
-The special vLLM 0.20.0 path additionally requires PR #21 and its dependencies.
+The default tool and reasoning parsers support both the older
+`openai.engine.protocol` and newer `generate.base.protocol` module layouts.
+Parser imports, construction and non-streaming extraction are tested on vLLM
+0.32.0; historical constructor signatures were checked against the upstream
+0.15.0–0.24.0 source. Import, construction and extraction smoke tests also pass
+using the v0.12, v0.13, v0.14, v0.15, v0.18, v0.19 and v0.20 source trees
+with shared PyTorch/CUDA dependencies (Transformers 4.57.6). The v0.24 source
+also passes with Transformers 5.19.0; vLLM 0.24 requires Transformers 5 and
+rejects Transformers 4. Reasoning is tested from v0.13.
+This is not an end-to-end serving guarantee for every intermediate version.
+Legacy parser files remain available; the <=0.12 variant also handles the
+relocation of `MistralTokenizer` with a fallback to its original location.
+The reasoning parser with a `_v0.13.0` suffix also works on vLLM 0.12.0.
 For older vLLM releases, explicitly send `skip_special_tokens: false` when
 using reasoning, especially in non-streaming requests.
 Versions below 0.12 retain the legacy tool parser but are not covered by the
@@ -95,9 +107,9 @@ For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
 backport path.
 Unpatched vLLM 0.14.0 and 0.15.0 overwrite the template `reasoning_effort` kwarg
 with the request-level value, including `None`. Apply the
-[version-specific backports](https://github.com/speakleash/bielik-tools/pull/20)
+[version-specific backports](compatibility/README.md)
 before starting those servers to use the original v3.1 template. For 0.20.0
-use the [native combined parser](https://github.com/speakleash/bielik-tools/pull/21)
+use the [native combined parser](compatibility/vllm-0.20.md)
 instead of patching vLLM. The advanced
 template remains an available legacy option, not a required workaround.
 On 24 GB GPUs, the BF16-to-FP8 load path in vLLM 0.13–0.15 can also exceed
@@ -166,3 +178,20 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
 
 Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/main/examples/crewai_to_file.py)
 Final contents of the report will be placed in `bielik_output/atrakcje.md`
+
+### v3.1 streaming tool calls
+
+`tools/bielik_vllm_tool_parser_v3.1.py` buffers a tag-wrapped tool call until
+`</tool_call>`, then emits its name and complete JSON arguments together. This
+makes the result independent of stream chunk boundaries, including a complete
+call or several calls in one chunk. Text outside calls remains incremental.
+Malformed completed blocks are preserved as text rather than executed; incomplete
+calls are not emitted as tools. Tool arguments are delayed until the closing tag
+instead of being exposed as potentially incomplete JSON fragments.
+
+Parser-only regression tests (vLLM environment plus pytest; no weights or model
+server needed):
+
+```bash
+python -m pytest -q tests/test_streaming_tool_parser_v31.py
+```
