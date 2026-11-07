@@ -186,6 +186,13 @@ class TestExtractToolCallsStreaming:
             ["<tool_call>", '{"name"', ': "get_weather"', ', "arguments"',
              ': {"city"', ': "Kra', 'ków"', "}}", "</tool_call>"],
             id="fine"),
+        pytest.param(
+            # Token split produced by the Bielik v3 tokenizer: closing
+            # braces arrive as separate tokens.
+            ["<tool_call>", " {", '"', "na", "me", '":', ' "', "get", "_", "we",
+             "ather", '",', ' "', "ar", "gu", "ments", '":', " {", '"', "city",
+             '":', ' "', "K", "raków", '"', "}", "}", "</tool_call>"],
+            id="bielik-tokens"),
     ])
     def test_single_call(self, parser, make_request, chunks):
         content, calls = collect_stream(stream_chunks(parser, make_request(), chunks))
