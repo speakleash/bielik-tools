@@ -1,1 +1,2 @@
 inspect-ai==0.3.288
+openai==3.46.0
