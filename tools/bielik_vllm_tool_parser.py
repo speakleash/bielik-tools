@@ -20,7 +20,7 @@ try:
         ExtractedToolCallInformation, FunctionCall, ToolCall,
     )
 except ModuleNotFoundError as exc:
-    if not exc.name.startswith("vllm.entrypoints.generate"):
+    if not (exc.name or "").startswith("vllm.entrypoints.generate"):
         raise
     from vllm.entrypoints.openai.engine.protocol import (
         DeltaFunctionCall, DeltaMessage, DeltaToolCall,

@@ -123,6 +123,13 @@ which allows a single call and forbids `<` inside arguments, and they ignore a
 named `tool_choice`. These limitations were not re-tested on those vLLM
 versions; use vLLM 0.24+ with `bielik_vllm_tool_parser.py` where possible.
 
+Migration: `tools/bielik_vllm_tool_parser_v3.1.py` and
+`tools/bielik_vllm_reasoning_parser_v3.1.py` were removed. Point
+`--tool-parser-plugin` / `--reasoning-parser-plugin` at
+`tools/bielik_vllm_tool_parser.py` / `tools/bielik_vllm_reasoning_parser.py`
+instead; with the old paths vLLM only logs the import error and then fails at
+startup because the `bielik` parsers are not registered.
+
 The compatibility table describes vLLM API variants, not Bielik model versions.
 For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
 backport path.
@@ -166,8 +173,11 @@ template has already closed `<think></think>` for the current assistant turn
 the output is returned as content. Only the current assistant turn is
 inspected, so `<think>` examples in a system prompt or in earlier turns do not
 change the result. With `n > 1` in a non-streaming request, vLLM 0.32 only
-tells the first choice's parser about the prompt; use `reasoning_effort` with
-the v3.1/v3.2 templates. Top-level values outside `none|low|medium|high|max`
+tells the first choice's parser about the prompt, and with
+`include_reasoning: false` it does not show the prompt to the parser at all; in
+both cases the answer of an `enable_thinking` request to a v3.1/v3.2 template
+ends up in reasoning (or is dropped). Use `reasoning_effort` with the v3.1/v3.2
+templates. Top-level values outside `none|low|medium|high|max`
 (for example `minimal`) are rejected by the v3.1/v3.2 templates with HTTP 400.
 `reasoning_streaming.py` sends both settings consistently, so it works with
 either template. Its sample conversation exercises `none`, `medium`, then `none`.
@@ -247,7 +257,10 @@ tool-call blocks from the start, after any reasoning. A prose lead-in cannot
 consume the token budget before the first call. `auto` mode still permits
 ordinary text around calls. The complete call must fit `max_tokens`; an
 arbitrarily small limit can still truncate JSON. If reasoning is enabled,
-also reserve room for calls with a thinking budget on vLLM 0.32.
+also reserve room for calls with a thinking budget on vLLM 0.32. The grammar
+starts after reasoning ends, so `required` with thinking needs the reasoning
+parser (`--reasoning-parser bielik`); without it a forced call cannot be
+preceded by a `<think>` block.
 
 A named `tool_choice` (`{"type": "function", "function": {"name": ...}}`)
 forces exactly one call of that function. The constraint covers the function
