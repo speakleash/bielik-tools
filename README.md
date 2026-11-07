@@ -106,6 +106,14 @@ GPU validation matrix.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
+The advanced template escapes control tags (`<|im_start|>`, `<|im_end|>`,
+`<think>`, `</think>`, `<tool_call>`, `</tool_call>`) in system, user and tool
+text by inserting a zero-width space after `<`, so these tags in pasted or
+tool-returned text cannot start a new turn or role, or become a tool call.
+Other special tokens of the tokenizer (for example `</s>`) are not escaped. Assistant
+history and the template's own thinking instructions are not changed. Pass
+`chat_template_kwargs={"sanitize_input": false}` to restore the raw behaviour.
+
 ## Template and parser variants
 
 The commands in this README use the advanced template and the parser files
@@ -114,14 +122,6 @@ v3.1 chat template; they do not select or install that template automatically.
 Use `--chat-template` to supply the matching template explicitly. Load only one
 tool parser and one reasoning parser: the variants register the same name,
 `bielik`.
-
-The advanced template escapes control tags (`<|im_start|>`, `<|im_end|>`,
-`<think>`, `</think>`, `<tool_call>`, `</tool_call>`) in system, user and tool
-text by inserting a zero-width space after `<`, so these tags in pasted or
-tool-returned text cannot start a new turn or role, or become a tool call.
-Other special tokens of the tokenizer (for example `</s>`) are not escaped. Assistant
-history and the template's own thinking instructions are not changed. Pass
-`chat_template_kwargs={"sanitize_input": false}` to restore the raw behaviour.
 
 The compatibility table describes vLLM API variants, not Bielik model versions.
 For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
