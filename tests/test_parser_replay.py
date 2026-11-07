@@ -1,5 +1,6 @@
 """Replay the same token IDs; never execute a tool or call a server."""
 import importlib.util
+import copy
 import json
 from pathlib import Path
 
@@ -81,7 +82,11 @@ def test_capture_preserves_raw_ids_and_never_executes_tools(tokenizer, monkeypat
     if terminal_stop:
         # vLLM changes finish_reason from stop to tool_calls after extraction.
         # Keep the underlying stop ID, but suppress its detokenized text.
-        monkeypatch.setattr(tokenizer, "eos_token", "</think>")
+        # Recent transformers exposes unset special tokens dynamically;
+        # monkeypatch undo cannot delete that virtual attribute. Keep the
+        # shared fixture untouched and configure a private tokenizer copy.
+        tokenizer = copy.deepcopy(tokenizer)
+        tokenizer.eos_token = "</think>"
     raw_ids = ids + ([tokenizer.eos_token_id] if terminal_stop else [])
     raw = {"prompt_token_ids": tokenizer.encode("user", add_special_tokens=False),
            "choices": [{"token_ids": raw_ids, "finish_reason": "tool_calls",
