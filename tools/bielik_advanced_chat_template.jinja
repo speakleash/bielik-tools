@@ -13,7 +13,7 @@
 {%- endmacro %}
 
 {%- if messages[0]["role"] == "system" %}
-    {%- set system_message = sanitize(messages[0]["content"]) %}
+    {%- set system_message = sanitize(messages[0]["content"]) if messages[0]["content"] is string else messages[0]["content"] %}
     {%- set loop_messages = messages[1:] %}
 {%- else %}
     {%- set loop_messages = messages %}
@@ -71,7 +71,7 @@
 
 {%- for message in loop_messages %}
     {%- if message["role"] == "user" %}
-        {{- "<|im_start|>user\n" + sanitize(message["content"]) + "<|im_end|>\n"}}
+        {{- "<|im_start|>user\n" + (sanitize(message["content"]) if message["content"] is string else message["content"]) + "<|im_end|>\n"}}
     {%- elif message.tool_calls is defined and message.tool_calls is not none %}
         {%- set content = message["content"] if message["content"] else "" %}
         {{- "<|im_start|>assistant\n" + content }}

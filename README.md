@@ -117,8 +117,9 @@ tool parser and one reasoning parser: the variants register the same name,
 
 The advanced template escapes control tags (`<|im_start|>`, `<|im_end|>`,
 `<think>`, `</think>`, `<tool_call>`, `</tool_call>`) in system, user and tool
-text by inserting a zero-width space after `<`. Pasted or tool-returned markup
-therefore cannot start a new turn or role, or become a tool call. Assistant
+text by inserting a zero-width space after `<`, so these tags in pasted or
+tool-returned text cannot start a new turn or role, or become a tool call.
+Other special tokens of the tokenizer (for example `</s>`) are not escaped. Assistant
 history and the template's own thinking instructions are not changed. Pass
 `chat_template_kwargs={"sanitize_input": false}` to restore the raw behaviour.
 

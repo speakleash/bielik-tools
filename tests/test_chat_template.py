@@ -563,3 +563,10 @@ def test_text_without_control_tags_renders_as_before(render, kwargs):
     # Escaping is a no-op for text without control tags; sanitize_input=False
     # is byte-identical to the template before escaping was added.
     assert render(**kwargs) == render(**kwargs, sanitize_input=False)
+
+
+def test_non_string_user_content_is_not_stringified(render):
+    # The template supports string content only; a list must still fail
+    # instead of being rendered as its Python repr.
+    with pytest.raises(TypeError):
+        render([{"role": "user", "content": [{"type": "text", "text": "x"}]}])
