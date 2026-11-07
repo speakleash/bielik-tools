@@ -31,7 +31,7 @@ _REQUIRED_TOOL_REGEX = r"\s{0,2}(<tool_call>\s{0,2}\{[\s\S]*\}\s{0,2}</tool_call
 
 # A named tool_choice forces exactly one call of that function. The prefix is
 # shared by every named regex so streaming can recognise forced output.
-_NAMED_TOOL_PREFIX = r"\s{0,2}<tool_call>\s{0,2}\{\s{0,2}\"name\"\s{0,2}:\s{0,2}"
+_NAMED_TOOL_PREFIX = r"\s{0,2}<tool_call>\s{0,2}\{[ \t\r\n]{0,2}\"name\"[ \t\r\n]{0,2}:[ \t\r\n]{0,2}"
 
 
 def _json_object_regex(depth: int = 3) -> str:
@@ -39,13 +39,14 @@ def _json_object_regex(depth: int = 3) -> str:
 
     Nesting is capped: the arguments object plus ``depth`` nested levels
     (4 levels in total by default); deeper arguments cannot be generated under
-    a named tool_choice. A named call must be exactly one call, so ``[\\s\\S]*`` cannot be used for the
-    arguments (it would swallow following calls). Strings may contain any
-    character, including ``<``.
+    a named tool_choice. A named call must be exactly one call, so the
+    arguments cannot use ``[\\s\\S]*`` (it would swallow following calls).
+    Strings accept JSON escapes and unescaped characters above U+001F,
+    including ``<``.
     """
-    ws = r"\s{0,4}"
-    string = r'"(?:[^"\\\x00-\x1f]|\\.)*"'
-    number = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
+    ws = r"[ \t\r\n]{0,4}"
+    string = r'"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"'
+    number = r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?"
     value = f"(?:{string}|{number}|true|false|null)"
     for _ in range(depth):
         arr = rf"\[{ws}(?:{value}{ws}(?:,{ws}{value}{ws})*)?\]"
@@ -62,8 +63,8 @@ _NAMED_ARGUMENTS_REGEX = _json_object_regex()
 def _named_tool_regex(name: str) -> str:
     quoted = re.escape(json.dumps(name, ensure_ascii=False))
     return (_NAMED_TOOL_PREFIX + quoted
-            + r"\s{0,2},\s{0,2}\"arguments\"\s{0,2}:\s{0,2}"
-            + _NAMED_ARGUMENTS_REGEX + r"\s{0,2}\}\s{0,2}</tool_call>\s{0,2}")
+            + r"[ \t\r\n]{0,2},[ \t\r\n]{0,2}\"arguments\"[ \t\r\n]{0,2}:[ \t\r\n]{0,2}"
+            + _NAMED_ARGUMENTS_REGEX + r"[ \t\r\n]{0,2}\}\s{0,2}</tool_call>\s{0,2}")
 
 
 def _is_forced_regex(regex) -> bool:
