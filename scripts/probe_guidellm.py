@@ -14,7 +14,7 @@ VERSION = "0.8.1"
 
 
 def scenario(target, model, tokenizer, family, enabled, tools, streams, requests, output):
-    row = {"text": "Ile to17 razy23? Podaj wyłącznie liczbę."}
+    row = {"text": "Ile to 17 razy 23? Podaj wyłącznie liczbę."}
     if tools:
         row = {"text": "Wywołaj add z a=17 i b=23. Podaj wynik zwrócony przez narzędzie.",
                "tools": json.dumps([ADD], ensure_ascii=False), "tool_choice": "required",
