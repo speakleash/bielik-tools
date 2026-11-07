@@ -47,6 +47,11 @@ class BielikToolParser(ToolParser):
             logger.warning("Detected Mistral tokenizer when using a Bielik model")
             self.model_tokenizer = self.model_tokenizer.tokenizer
 
+        # Streaming state: not every vLLM base class initializes these.
+        self.current_tool_name_sent: bool = False
+        self.prev_tool_call_arr: list[dict] = []
+        self.current_tool_id: int = -1
+        self.streamed_args_for_tool: list[str] = []
         self._stream_text_offset = 0
         self.tool_call_start_token: str = "<tool_call>"
         self.tool_call_end_token: str = "</tool_call>"
