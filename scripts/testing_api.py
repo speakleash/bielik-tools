@@ -92,7 +92,12 @@ def read_stream(response):
             slot["finish_reason"] = choice.get("finish_reason") or slot["finish_reason"]
             for call in delta.get("tool_calls") or []:
                 dst = slot["tool_calls"].setdefault(call["index"], {"id": "", "name": "", "arguments": ""})
-                dst["id"] += call.get("id") or ""
+                # IDs identify a call; unlike names/arguments they are not
+                # text fragments. Some gateways repeat the full ID per delta.
+                if incoming_id := call.get("id"):
+                    if dst["id"] and dst["id"] != incoming_id:
+                        raise ProtocolError("Tool call ID changed within one stream slot")
+                    dst["id"] = incoming_id
                 fn = call.get("function") or {}
                 dst["name"] += fn.get("name") or ""
                 dst["arguments"] += fn.get("arguments") or ""
