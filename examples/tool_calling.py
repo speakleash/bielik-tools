@@ -79,7 +79,7 @@ def pretty_print_conversation(messages):
 
 
 def chat_completion_request(messages, tool_choice="auto"):
-    """Chat completion with tools (needs Bielik v3.1 tool parser plugin)."""
+    """Chat completion with tools (needs the Bielik tool parser plugin)."""
     try:
         return client.chat.completions.create(
             model=model,
