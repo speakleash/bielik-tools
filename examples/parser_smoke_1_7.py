@@ -215,6 +215,9 @@ def test_3_streaming(client, model) -> CheckResult:
     by_idx: dict[int, dict] = {}
     content = ""
     for chunk in stream:
+        # Some gateways emit a final usage chunk with choices=[].
+        if not chunk.choices:
+            continue
         delta = chunk.choices[0].delta
         if delta.content:
             content += delta.content
@@ -261,7 +264,7 @@ def test_4_think_and_tool(client, model) -> CheckResult:
         tools=[WEATHER],
         tool_choice="auto",
         reasoning_effort="medium",
-        temperature=0.7,
+        temperature=0.0,
         max_tokens=600,
     )
     m = _msg_fields(resp.choices[0].message)
@@ -395,7 +398,7 @@ def test_7_effort_none_vs_high(client, model) -> CheckResult:
         model,
         messages=prompt,
         reasoning_effort="high",
-        temperature=0.7,
+        temperature=0.0,
         max_tokens=800,
     )
     none_m = _msg_fields(none_resp.choices[0].message)
@@ -464,6 +467,8 @@ def _aggregate_stream(stream) -> dict:
     by_idx: dict[int, dict] = {}
     finish = None
     for chunk in stream:
+        if not chunk.choices:
+            continue
         choice = chunk.choices[0]
         finish = choice.finish_reason or finish
         delta = choice.delta
@@ -508,7 +513,7 @@ def test_9_streaming_reasoning(client, model) -> CheckResult:
         ],
         reasoning_effort="medium",
         stream=True,
-        temperature=0.7,
+        temperature=0.0,
         max_tokens=600,
     )
     m = _aggregate_stream(stream)
@@ -537,7 +542,7 @@ def test_10_streaming_think_and_tool(client, model) -> CheckResult:
         tool_choice="auto",
         reasoning_effort="medium",
         stream=True,
-        temperature=0.7,
+        temperature=0.0,
         max_tokens=600,
     )
     m = _aggregate_stream(stream)
@@ -706,7 +711,7 @@ def test_12_structured_vs_reasoning(client, model) -> CheckResult:
         reasoning_effort="medium",
         response_format=rf,
         max_tokens=800,
-        temperature=0.7,
+        temperature=0.0,
     )
     none_m = _msg_fields(none_resp.choices[0].message)
     think_m = _msg_fields(think_resp.choices[0].message)
