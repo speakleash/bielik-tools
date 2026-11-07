@@ -68,13 +68,13 @@ def normalized(message):
 
 
 CASES = {
-    "plain": {"prompt": "Ile to17 razy23? Odpowiedz wyłącznie liczbą.", "answer": "391", "tools": False},
+    "plain": {"prompt": "Ile to 17 razy 23? Odpowiedz wyłącznie liczbą.", "answer": "391", "tools": False},
     "single": {"prompt": "Wywołaj add z a=17 i b=23. Podaj wyłącznie liczbę zwróconą przez narzędzie.", "counts": {"add": 1}, "answer": "40", "choice": "required"},
     "parallel": {"prompt": "Wywołaj równolegle add z a=17 i b=23 oraz weather dla Krakowa. Podaj wyniki.", "counts": {"add": 1, "weather": 1}, "contains": [40, 21]},
     "named": {"prompt": "Wywołaj add z a=17 i b=23. Nie wywołuj innych narzędzi. Podaj wynik zwrócony przez narzędzie.", "counts": {"add": 1}, "choice": {"type": "function", "function": {"name": "add"}}, "contains": [40]},
     "none": {"prompt": "Wywołaj add z a=17 i b=23.", "choice": "none", "counts": {}},
     "retry": {"prompt": "Sprawdź weather dla Krakowa. Jeśli retryable=true, ponów dokładnie raz. Podaj temperaturę.", "counts": {"weather": 2}, "retry": True, "contains": [21]},
-    "schema": {"prompt": "Zwróć wynik17 razy23 w polu answer.", "schema": True, "tools": False},
+    "schema": {"prompt": "Zwróć wynik 17 razy 23 w polu answer.", "schema": True, "tools": False},
     "history": {"prompt": "A ile wynosi poprzedni wynik pomnożony przez dwa? Podaj wyłącznie liczbę.", "history": True, "tools": False, "answer": "80"},
 }
 
@@ -154,7 +154,7 @@ def scenario(base_url, model, family, name, enabled, streaming):
     graph = builder.compile()
     initial = []
     if case.get("history"):
-        initial = [HumanMessage("Ile to17+23?"), AIMessage("40", additional_kwargs={"reasoning": "17+23=40"})]
+        initial = [HumanMessage("Ile to 17 + 23?"), AIMessage("40", additional_kwargs={"reasoning": "17+23=40"})]
     initial.append(HumanMessage(case["prompt"]))
     try:
         graph.invoke({"messages": initial}, {"recursion_limit": 12})
