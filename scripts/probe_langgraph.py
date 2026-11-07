@@ -4,6 +4,7 @@ import argparse
 import importlib.metadata
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import threading
@@ -69,12 +70,12 @@ def normalized(message):
 CASES = {
     "plain": {"prompt": "Ile to17 razy23? Odpowiedz wyłącznie liczbą.", "answer": "391", "tools": False},
     "single": {"prompt": "Wywołaj add z a=17 i b=23. Podaj wyłącznie liczbę zwróconą przez narzędzie.", "counts": {"add": 1}, "answer": "40", "choice": "required"},
-    "parallel": {"prompt": "Wywołaj równolegle add z a=17 i b=23 oraz weather dla Krakowa. Podaj wyniki.", "counts": {"add": 1, "weather": 1}},
-    "named": {"prompt": "Wywołaj add z a=17 i b=23. Nie wywołuj innych narzędzi.", "counts": {"add": 1}, "choice": {"type": "function", "function": {"name": "add"}}},
+    "parallel": {"prompt": "Wywołaj równolegle add z a=17 i b=23 oraz weather dla Krakowa. Podaj wyniki.", "counts": {"add": 1, "weather": 1}, "contains": [40, 21]},
+    "named": {"prompt": "Wywołaj add z a=17 i b=23. Nie wywołuj innych narzędzi. Podaj wynik zwrócony przez narzędzie.", "counts": {"add": 1}, "choice": {"type": "function", "function": {"name": "add"}}, "contains": [40]},
     "none": {"prompt": "Wywołaj add z a=17 i b=23.", "choice": "none", "counts": {}},
-    "retry": {"prompt": "Sprawdź weather dla Krakowa. Jeśli retryable=true, ponów dokładnie raz. Podaj temperaturę.", "counts": {"weather": 2}, "retry": True},
+    "retry": {"prompt": "Sprawdź weather dla Krakowa. Jeśli retryable=true, ponów dokładnie raz. Podaj temperaturę.", "counts": {"weather": 2}, "retry": True, "contains": [21]},
     "schema": {"prompt": "Zwróć wynik17 razy23 w polu answer.", "schema": True, "tools": False},
-    "history": {"prompt": "A ile to17 razy23? Podaj wyłącznie liczbę.", "history": True, "tools": False, "answer": "391"},
+    "history": {"prompt": "A ile wynosi poprzedni wynik pomnożony przez dwa? Podaj wyłącznie liczbę.", "history": True, "tools": False, "answer": "80"},
 }
 
 
@@ -173,6 +174,9 @@ def scenario(base_url, model, family, name, enabled, streaming):
                                       **({"schema": True} if case.get("schema") else {})})
         if case.get("answer") and final["content"].strip().rstrip(".!") != case["answer"]:
             errors.append("Wrong final answer")
+        if any(not re.search(r"(?<![\d-])" + re.escape(str(value)) + r"(?!\d|[.,]\d)",
+                             final["content"]) for value in case.get("contains", [])):
+            errors.append("Final answer omitted or changed returned tool values")
         if name == "parallel" and not any(len(t["tool_calls"]) == 2 for t in turns):
             errors.append("No actual parallel calls")
         if case.get("retry"):
