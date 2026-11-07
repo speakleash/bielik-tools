@@ -29,6 +29,48 @@ logger = init_logger(__name__)
 _REQUIRED_TOOL_REGEX = r"\s{0,2}(<tool_call>\s{0,2}\{[\s\S]*\}\s{0,2}</tool_call>\s{0,2})+"
 
 
+# A named tool_choice forces exactly one call of that function. The prefix is
+# shared by every named regex so streaming can recognise forced output.
+_NAMED_TOOL_PREFIX = r"\s{0,2}<tool_call>\s{0,2}\{\s{0,2}\"name\"\s{0,2}:\s{0,2}"
+
+
+def _json_object_regex(depth: int = 3) -> str:
+    """Regex for a JSON object with bounded nesting.
+
+    Nesting is capped: the arguments object plus ``depth`` nested levels
+    (4 levels in total by default); deeper arguments cannot be generated under
+    a named tool_choice. A named call must be exactly one call, so ``[\\s\\S]*`` cannot be used for the
+    arguments (it would swallow following calls). Strings may contain any
+    character, including ``<``.
+    """
+    ws = r"\s{0,4}"
+    string = r'"(?:[^"\\\x00-\x1f]|\\.)*"'
+    number = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
+    value = f"(?:{string}|{number}|true|false|null)"
+    for _ in range(depth):
+        arr = rf"\[{ws}(?:{value}{ws}(?:,{ws}{value}{ws})*)?\]"
+        obj = (rf"\{{{ws}(?:{string}{ws}:{ws}{value}{ws}"
+               rf"(?:,{ws}{string}{ws}:{ws}{value}{ws})*)?\}}")
+        value = f"(?:{string}|{number}|true|false|null|{arr}|{obj})"
+    return (rf"\{{{ws}(?:{string}{ws}:{ws}{value}{ws}"
+            rf"(?:,{ws}{string}{ws}:{ws}{value}{ws})*)?\}}")
+
+
+_NAMED_ARGUMENTS_REGEX = _json_object_regex()
+
+
+def _named_tool_regex(name: str) -> str:
+    quoted = re.escape(json.dumps(name, ensure_ascii=False))
+    return (_NAMED_TOOL_PREFIX + quoted
+            + r"\s{0,2},\s{0,2}\"arguments\"\s{0,2}:\s{0,2}"
+            + _NAMED_ARGUMENTS_REGEX + r"\s{0,2}\}\s{0,2}</tool_call>\s{0,2}")
+
+
+def _is_forced_regex(regex) -> bool:
+    return isinstance(regex, str) and (
+        regex == _REQUIRED_TOOL_REGEX or regex.startswith(_NAMED_TOOL_PREFIX))
+
+
 # Registered as "bielik" so --tool-call-parser bielik works when this file is
 # loaded via --tool-parser-plugin. Do not load this plugin and the legacy
 # bielik_vllm_tool_parser.py in the same process (same registration name).
@@ -84,6 +126,17 @@ class BielikToolParser(ToolParser):
                 request.response_format = None
                 request.structured_outputs = StructuredOutputsParams(
                     regex=_REQUIRED_TOOL_REGEX
+                )
+            elif getattr(getattr(request.tool_choice, "function", None), "name", None):
+                # Named tool_choice: vLLM's JSON-based path does not fit the
+                # tag-wrapped format, so without a constraint the model could
+                # call other tools (and finish_reason ended up "stop").
+                # Force exactly one call of the requested function.
+                name = request.tool_choice.function.name
+                request.tool_choice = "auto"
+                request.response_format = None
+                request.structured_outputs = StructuredOutputsParams(
+                    regex=_named_tool_regex(name)
                 )
         return request
 
@@ -147,7 +200,7 @@ class BielikToolParser(ToolParser):
         # current_text is cumulative. Consume each text range/closed call once;
         # never concatenate delta_text again or infer state from balanced counts.
         constraints = getattr(request, "structured_outputs", None)
-        required_output = constraints is not None and constraints.regex == _REQUIRED_TOOL_REGEX
+        required_output = constraints is not None and _is_forced_regex(constraints.regex)
         # Guided decoding can spell the tags using ordinary tokens instead of
         # their registered special IDs. Required output is known to consist
         # only of calls; buffer partial text tags rather than leaking them.
