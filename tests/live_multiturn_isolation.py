@@ -14,7 +14,7 @@ from testing_api import ADD, WEATHER, chat, check_choice, thinking
 
 def conversation(base_url, model, prompt, *, family="v31", enabled=False, stream=False,
                  expected_counts=None, expected_arguments=None, answers=(),
-                 fail_first_weather=False, max_turns=5):
+                 fail_first_weather=False, max_turns=5, client=None):
     tools = SyntheticTools(fail_first_weather)
     messages = [{"role": "user", "content": prompt}]
     turns, errors = [], []
@@ -24,7 +24,7 @@ def conversation(base_url, model, prompt, *, family="v31", enabled=False, stream
                     "temperature": 0, "max_tokens": 512, "stream": stream,
                     "chat_template_kwargs": thinking(family, enabled),
                     **({"thinking_token_budget": 64} if enabled else {})}
-            result = chat(base_url, body)
+            result = (client or chat)(base_url, body)
             choice = result["choices"][0]
             turns.append({"request": body, "response": result})
             errors += check_choice(choice, {} if enabled else {"reasoning": False})

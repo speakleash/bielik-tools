@@ -1,0 +1,13 @@
+# Local-only example. The vLLM server remains responsible for the Bielik parsers.
+model_list:
+  - model_name: bielik-test
+    litellm_params:
+      model: hosted_vllm/bielik-test
+      api_base: http://127.0.0.1:8000/v1
+      api_key: dummy
+litellm_settings:
+  drop_params: false
+  telemetry: false
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  disable_spend_logs: true
