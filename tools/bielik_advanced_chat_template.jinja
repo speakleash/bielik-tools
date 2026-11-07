@@ -1,5 +1,19 @@
+{#- Control tags (<|im_start|>, <|im_end|>, <think>, </think>, <tool_call>,
+    </tool_call>) inside system, user and tool text are escaped with a zero-width
+    space after "<", so pasted or tool-returned markup cannot become a real control
+    token (new turn, role or tool call). Assistant history is left as is.
+    sanitize_input=false restores the previous raw behaviour. -#}
+{%- set sanitize_input = sanitize_input if sanitize_input is defined else true %}
+{%- macro sanitize(text) -%}
+    {%- if sanitize_input -%}
+        {{- text | replace("<|im_start|>", "<​|im_start|>") | replace("<|im_end|>", "<​|im_end|>") | replace("<think>", "<​think>") | replace("</think>", "<​/think>") | replace("<tool_call>", "<​tool_call>") | replace("</tool_call>", "<​/tool_call>") -}}
+    {%- else -%}
+        {{- text -}}
+    {%- endif -%}
+{%- endmacro %}
+
 {%- if messages[0]["role"] == "system" %}
-    {%- set system_message = messages[0]["content"] %}
+    {%- set system_message = sanitize(messages[0]["content"]) if messages[0]["content"] is string else messages[0]["content"] %}
     {%- set loop_messages = messages[1:] %}
 {%- else %}
     {%- set loop_messages = messages %}
@@ -57,7 +71,7 @@
 
 {%- for message in loop_messages %}
     {%- if message["role"] == "user" %}
-        {{- "<|im_start|>user\n" + message["content"] + "<|im_end|>\n"}}
+        {{- "<|im_start|>user\n" + (sanitize(message["content"]) if message["content"] is string else message["content"]) + "<|im_end|>\n"}}
     {%- elif message.tool_calls is defined and message.tool_calls is not none %}
         {%- set content = message["content"] if message["content"] else "" %}
         {{- "<|im_start|>assistant\n" + content }}
@@ -73,7 +87,7 @@
         {%- else %}
             {%- set content = message.content %}
         {%- endif %}
-        {{- "<|im_start|>tool\n" + content|string + "<|im_end|>\n" }}
+        {{- "<|im_start|>tool\n" + sanitize(content|string) + "<|im_end|>\n" }}
     {%- else %}
         {{- raise_exception("Only user and assistant and tool_results and tool and function roles are supported, with the exception of an initial optional system message!") }}
     {%- endif %}
