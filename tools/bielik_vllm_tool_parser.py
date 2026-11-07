@@ -36,6 +36,8 @@ from vllm.utils import random_uuid
 logger = init_logger(__name__)
 
 
+# Registered as "bielik". Do not load this plugin and the _v3.1 variant in the
+# same process (same registration name).
 @ToolParserManager.register_module("bielik")
 class BielikToolParser(ToolParser):
     # Tag-wrapped tool calls are incompatible with vLLM's default JSON

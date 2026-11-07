@@ -32,6 +32,8 @@ def _warn_missing_think_tokens() -> None:
             "special tokens; thinking output is returned as content.")
 
 
+# Registered as "bielik". Do not load this plugin and the _v3.1 variant in the
+# same process (same registration name).
 @ReasoningParserManager.register_module("bielik")
 class BielikReasoningParser(ReasoningParser):
     """
@@ -102,3 +104,14 @@ class BielikReasoningParser(ReasoningParser):
             current_token_ids,
             delta_token_ids,
         )
+
+    def adjust_initial_state_from_prompt(self, prompt_token_ids) -> None:
+        hook = getattr(self._parser, "adjust_initial_state_from_prompt", None)
+        if hook is not None:
+            hook(prompt_token_ids)
+
+    def prepare_structured_tag(self, original_tag, tool_server):
+        hook = getattr(self._parser, "prepare_structured_tag", None)
+        if hook is None:
+            return original_tag
+        return hook(original_tag, tool_server)
