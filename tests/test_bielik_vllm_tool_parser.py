@@ -144,11 +144,12 @@ class TestExtractToolCalls:
         assert len({c.id for c in result.tool_calls}) == 2
 
     def test_unterminated_call(self, parser, make_request):
-        # Generation stopped (e.g. on stop token) before </tool_call>.
+        # Match streaming: complete JSON alone is not a completed wrapper.
         output = '<tool_call>{"name": "get_weather", "arguments": {"city": "Kraków"}}'
         result = parser.extract_tool_calls(output, make_request())
-        assert result.tools_called is True
-        assert json.loads(result.tool_calls[0].function.arguments) == {"city": "Kraków"}
+        assert result.tools_called is False
+        assert result.tool_calls == []
+        assert result.content == output
 
     def test_nested_arguments(self, parser, make_request):
         args = {"query": {"filters": [{"field": "a", "op": "=", "value": 1}]}, "limit": 10}
