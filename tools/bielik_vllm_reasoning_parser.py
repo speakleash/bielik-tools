@@ -59,13 +59,13 @@ class BielikReasoningParser(ReasoningParser):
 
         self._parser = None
         if enable_thinking:
-            try:
-                self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
-            except RuntimeError:
-                # Tokenizers without <think>/</think> special tokens (e.g.
-                # Bielik-4.5B-v3.0) cannot be split by token id. Return the
-                # whole output as content instead of failing the request.
+            if (self.vocab.get("<think>") is None
+                    or self.vocab.get("</think>") is None):
+                # Only missing delimiters trigger the content fallback. Other
+                # initialization errors must surface instead of being hidden.
                 _warn_missing_think_tokens()
+            else:
+                self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
         if self._parser is None:
             self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
 

@@ -40,12 +40,17 @@ def _load(filename):
 
 
 @pytest.fixture(params=PARSER_FILES)
-def parser_cls(request):
+def parser_module(request):
     try:
         module = _load(request.param)
     except ImportError as exc:
         pytest.skip(f"{request.param} does not support the installed vLLM: {exc}")
-    return module.BielikReasoningParser
+    return module
+
+
+@pytest.fixture
+def parser_cls(parser_module):
+    return parser_module.BielikReasoningParser
 
 
 def test_thinking_disabled_uses_identity(parser_cls):
@@ -63,12 +68,25 @@ def test_thinking_enabled_uses_deepseek_r1(parser_cls):
     assert content == "Wynik to 51."
 
 
-def test_thinking_enabled_without_think_tokens_falls_back(parser_cls):
+@pytest.mark.parametrize("vocab", [NO_THINK_VOCAB, {"<think>": 10}, {"</think>": 11}])
+def test_thinking_enabled_without_think_tokens_falls_back(parser_cls, vocab):
     # Tokenizers without <think>/</think> special tokens (e.g.
     # Bielik-4.5B-v3.0) must not fail the request.
-    parser = parser_cls(FakeTokenizer(NO_THINK_VOCAB),
+    parser = parser_cls(FakeTokenizer(vocab),
                         chat_template_kwargs={"enable_thinking": True})
     assert isinstance(parser._parser, IdentityReasoningParser)
     reasoning, content = parser.extract_reasoning("Wynik to 51.", request=None)
     assert reasoning is None
     assert content == "Wynik to 51."
+
+
+def test_unrelated_initialization_error_propagates(parser_module, monkeypatch):
+    def broken_parser(*args, **kwargs):
+        raise RuntimeError("unrelated initialization failure")
+
+    monkeypatch.setattr(parser_module, "DeepSeekR1ReasoningParser", broken_parser)
+    with pytest.raises(RuntimeError, match="unrelated initialization failure"):
+        parser_module.BielikReasoningParser(
+            FakeTokenizer(THINK_VOCAB),
+            chat_template_kwargs={"enable_thinking": True},
+        )
