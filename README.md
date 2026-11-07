@@ -250,6 +250,27 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
 Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/main/examples/crewai_to_file.py)
 Final contents of the report will be placed in `bielik_output/atrakcje.md`
 
+### Request options that do not reach the chat template
+
+vLLM 0.32 passes only `chat_template_kwargs` (plus `reasoning_effort` and a few
+generation flags such as `add_generation_prompt`) to the chat template. The request-level
+`tool_choice` and `response_format` are enforced by the parser and vLLM, but
+the template does not see them, so its instructions for them are not added.
+To add those instructions, repeat the values in `chat_template_kwargs`, for
+example `{"tool_choice": "required"}`.
+
+With `tool_choice="none"` the tools are still rendered into the prompt, and
+the model may then write a tool call as plain text. On vLLM 0.32 (checked)
+start the server with `--exclude-tools-when-tool-choice-none` to drop the
+tools from such requests.
+
+Tool calls are recognised from the text `<tool_call>…</tool_call>`. In
+non-streaming responses this includes tags that the model spelled with
+ordinary tokens, for example when it copies such text from the user or from a
+document; in streaming responses outside `required`/named choices only the
+dedicated `<tool_call>` token starts a call. Treat tool arguments as untrusted
+input either way.
+
 ### Streaming tool calls and forced tool choice
 
 For `tool_choice="required"`, the tool parser constrains the final output to
