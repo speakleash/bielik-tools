@@ -65,8 +65,8 @@ def chat_completion_request(messages, reasoning_effort: str = "none"):
     """Stream a chat completion.
 
     Uses v3.1 ``reasoning_effort`` (none|low|medium|high|max) via
-    ``chat_template_kwargs``. Requires the Bielik v3.1 reasoning parser
-    plugin when effort != none.
+    ``chat_template_kwargs``, plus ``enable_thinking`` for the advanced
+    template and legacy reasoning parser.
     """
     try:
         kwargs = {
@@ -74,7 +74,11 @@ def chat_completion_request(messages, reasoning_effort: str = "none"):
             "messages": messages,
             "stream": True,
             "extra_body": {
-                "chat_template_kwargs": {"reasoning_effort": reasoning_effort},
+                "skip_special_tokens": False,
+                "chat_template_kwargs": {
+                    "reasoning_effort": reasoning_effort,
+                    "enable_thinking": reasoning_effort != "none",
+                },
             },
         }
         if reasoning_effort != "none":
@@ -96,6 +100,9 @@ def process_streamed_response(stream, print_stream=False):
     reasoning_color = role_to_color.get("reasoning", "white")
 
     for chunk in stream:
+        # Usage-only chunks have no choices (e.g. include_usage=True).
+        if not chunk.choices:
+            continue
         delta = chunk.choices[0].delta
         finish_reason = chunk.choices[0].finish_reason
 
@@ -107,7 +114,8 @@ def process_streamed_response(stream, print_stream=False):
                     print(colored("[ Thinking... ]\n", reasoning_color), end="", flush=True)
                 print(colored(reasoning_piece, reasoning_color), end="", flush=True)
             reasoning = True
-        elif getattr(delta, "content", None):
+        # A single delta can carry the end of reasoning and the answer.
+        if getattr(delta, "content", None):
             full_response_content += delta.content
             if print_stream:
                 if reasoning:
@@ -118,18 +126,16 @@ def process_streamed_response(stream, print_stream=False):
         if finish_reason:
             break
 
-    if full_reasoning_content and not full_response_content:
-        # workaround: some stacks put the whole answer in reasoning only
-        full_response_content = full_reasoning_content
-        full_reasoning_content = ""
-        if print_stream:
-            if reasoning:
-                print(colored("\n[ Thinking finished ]\n", reasoning_color), end="", flush=True)
-                reasoning = False
-            print(colored(full_response_content, assistant_color), end="", flush=True)
-
     if print_stream:
+        if reasoning:
+            print(colored("\n[ Thinking finished ]", reasoning_color), end="", flush=True)
         print()
+
+    if full_reasoning_content and not full_response_content:
+        logging.warning(
+            "The stream returned reasoning without a final answer; check the "
+            "token budget and the server's matching template/parser configuration."
+        )
 
     assistant_message_dict = {"role": "assistant", "content": None, "reasoning": None}
     if full_reasoning_content:
