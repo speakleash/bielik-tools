@@ -27,3 +27,7 @@ Use `BIELIK_TEST_API_KEY` for authentication. Artifacts contain full synthetic
 requests/responses, never the authorization header; existing output files
 are not overwritten. `--only` accepts exact case names and rejects typos.
 No generated tool is executed and there is no external service dependency.
+
+Named tool forcing accepts stop/tool_calls to match supported vLLM versions;
+required/auto calls still require tool_calls. SSE call IDs use their first
+non-empty identity; repeated identical IDs are accepted and changing IDs fail.
