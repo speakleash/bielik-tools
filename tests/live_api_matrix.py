@@ -22,7 +22,7 @@ def cases(family):
             yield "plain-" + suffix, {**base, "messages": plain}, {"tools": [], "reasoning": enabled, "content": True, "finish": ["stop"]}
             for mode, choice in (("auto", "auto"), ("none", "none"), ("required", "required"), ("named", named("add"))):
                 yield mode + "-" + suffix, {**base, "messages": tool_prompt, "tools": [ADD, WEATHER], "tool_choice": choice}, {
-                    "tools": [] if mode == "none" else ["add"], "finish": ["stop"] if mode == "none" else ["tool_calls"],
+                    "tools": [] if mode == "none" else ["add"], "finish": (["stop"] if mode == "none" else ["stop", "tool_calls"] if mode == "named" else ["tool_calls"]),
                     "reasoning": enabled, "arguments": [] if mode == "none" else [{"a": 17, "b": 23}]}
             yield "schema-" + suffix, {**base, "messages": plain, "response_format": ANSWER_SCHEMA}, {
                 "schema": True, "tools": [], "reasoning": enabled, "finish": ["stop"]}
