@@ -58,6 +58,7 @@ class BielikReasoningParser(ReasoningParser):
         enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
 
         self._parser = None
+        self._thinking = False
         if enable_thinking:
             if (self.vocab.get("<think>") is None
                     or self.vocab.get("</think>") is None):
@@ -66,10 +67,30 @@ class BielikReasoningParser(ReasoningParser):
                 _warn_missing_think_tokens()
             else:
                 self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
+                self._thinking = True
         if self._parser is None:
             self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
 
+    def adjust_request(
+        self, request: ChatCompletionRequest | ResponsesRequest
+    ) -> ChatCompletionRequest | ResponsesRequest:
+        # Some tokenizers (e.g. Bielik v3.0) flag <think>/</think> as special
+        # tokens. With the default skip_special_tokens=True they are dropped
+        # from the text and reasoning cannot be separated from the answer.
+        if self._thinking and hasattr(request, "skip_special_tokens"):
+            request.skip_special_tokens = False
+        return request
+
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        # vLLM also calls this on the prompt. The advanced template mentions
+        # <think>...</think> in the system prompt, which must not look like
+        # "reasoning already ended"; only inspect the current assistant turn.
+        start = self.vocab.get("<|im_start|>")
+        if start is not None:
+            for i in range(len(input_ids) - 1, -1, -1):
+                if input_ids[i] == start:
+                    input_ids = input_ids[i:]
+                    break
         return self._parser.is_reasoning_end(input_ids)
 
     def is_reasoning_end_streaming(
