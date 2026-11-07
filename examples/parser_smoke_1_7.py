@@ -428,37 +428,36 @@ def test_7_effort_none_vs_high(client, model) -> CheckResult:
 
 
 def test_8_required_stress(client, model) -> CheckResult:
-    """tool_choice=required on a greeting — must still call a tool eventually.
+    """Required calls must not spend a short output budget on prose.
 
-    The template's "required" contract only promises "don't answer without
-    calling a tool first" — it does NOT forbid a short lead-in before the
-    <tool_call> tag. So the guided regex intentionally allows free text
-    around the call, and this test uses a realistic max_tokens (not an
-    artificially tiny one) so a normal lead-in has room to complete.
+    A complete call must still fit the limit; arbitrarily small budgets can
+    truncate JSON even when constrained decoding is working correctly.
     """
-    name = "8_required_stress_hi"
-    resp = chat(
-        client,
-        model,
-        messages=[{"role": "user", "content": "Cześć!"}],
-        tools=[WEATHER],
-        tool_choice="required",
-        reasoning_effort="none",
-        max_tokens=200,
+    name = "8_required_short_budget"
+    results = {}
+    for stream in (False, True):
+        resp = chat(
+            client, model,
+            messages=[{"role": "user", "content": "Cześć!"}],
+            tools=[WEATHER], tool_choice="required", reasoning_effort="none",
+            max_tokens=64, stream=stream,
+        )
+        if stream:
+            m = _aggregate_stream(resp)
+        else:
+            m = _msg_fields(resp.choices[0].message)
+            m["finish"] = resp.choices[0].finish_reason
+        results["stream" if stream else "non_stream"] = m
+    ok = all(
+        m["n_tools"] >= 1 and not (m["content"] or "").strip()
+        and all(isinstance(json.loads(c["arguments"]), dict) for c in m["tool_calls"])
+        for m in results.values()
     )
-    m = _msg_fields(resp.choices[0].message)
-    ok = m["n_tools"] >= 1
-    return CheckResult(
-        name,
-        ok,
-        detail=(
-            f"n_tools={m['n_tools']} finish={resp.choices[0].finish_reason} "
-            f"content={((m['content'] or '')[:120])!r}"
-            if not ok
-            else f"forced tool under stress: {m['tool_calls'][0]['name']}"
-        ),
-        extras=m,
+    detail = "; ".join(
+        f"{mode}: n_tools={m['n_tools']} finish={m['finish']}"
+        for mode, m in results.items()
     )
+    return CheckResult(name, ok, detail=detail, extras=results)
 
 
 def _aggregate_stream(stream) -> dict:
@@ -675,7 +674,9 @@ def test_12_structured_vs_reasoning(client, model) -> CheckResult:
 
     Expectation with reasoning on: non-empty message.reasoning AND schema-valid
     JSON in message.content (not only inside reasoning). Known failure mode on
-    stock Bielik 3.0: entire payload goes to reasoning, content=null.
+    stock Bielik 3.0: the token limit is exhausted inside reasoning,
+    content=null. On vLLM 0.32, bound thinking separately to reserve room
+    for the final JSON. Older servers must not silently ignore that budget.
     """
     name = "12_structured_json_vs_reasoning"
     prompt = [
@@ -712,6 +713,7 @@ def test_12_structured_vs_reasoning(client, model) -> CheckResult:
         response_format=rf,
         max_tokens=800,
         temperature=0.0,
+        extra_body={"thinking_token_budget": 256},
     )
     none_m = _msg_fields(none_resp.choices[0].message)
     think_m = _msg_fields(think_resp.choices[0].message)
@@ -728,13 +730,15 @@ def test_12_structured_vs_reasoning(client, model) -> CheckResult:
         f"none: schema_ok={_car_schema_ok(none_obj)} reasoning_len={len(none_r)} "
         f"content={((none_m['content'] or '')[:80])!r}; "
         f"think: schema_in_content={_car_schema_ok(think_obj)} "
-        f"reasoning_len={len(think_r)} content={((think_m['content'] or '')[:80])!r}"
+        f"reasoning_len={len(think_r)} finish={think_resp.choices[0].finish_reason} "
+        f"content={((think_m['content'] or '')[:80])!r}"
     )
     return CheckResult(
         name,
         ok,
         detail=detail,
-        extras={"none": none_m, "think": think_m, "none_obj": none_obj, "think_obj": think_obj},
+        extras={"none": none_m, "think": think_m, "none_obj": none_obj, "think_obj": think_obj,
+                "think_finish_reason": think_resp.choices[0].finish_reason},
     )
 
 

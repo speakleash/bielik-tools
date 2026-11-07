@@ -24,6 +24,10 @@ from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
 
+# Bound whitespace around wrappers too: after reasoning, unconstrained \s*
+# can otherwise consume the remaining output budget on newlines alone.
+_REQUIRED_TOOL_REGEX = r"\s{0,2}(<tool_call>\s{0,2}\{[\s\S]*\}\s{0,2}</tool_call>\s{0,2})+"
+
 
 # Registered as "bielik" so --tool-call-parser bielik works when this file is
 # loaded via --tool-parser-plugin. Do not load this plugin and the legacy
@@ -72,13 +76,14 @@ class BielikToolParser(ToolParser):
                 # cannot inject template variables here.  For the strongest
                 # enforcement pass tool_choice via chat_template_kwargs too:
                 #   chat_template_kwargs={"tool_choice": "required"}
-                #
-                # Regex without look-around (xgrammar/outlines do not support it).
-                # Allow free text before/between/after, but require ≥1 <tool_call> block.
+                # The grammar starts after reasoning has ended. Require the
+                # call immediately, so a prose lead-in cannot consume the
+                # output budget. Auto mode still allows ordinary text.
+                # Keep arbitrary characters inside arguments (including '<').
                 request.tool_choice = "auto"
                 request.response_format = None
                 request.structured_outputs = StructuredOutputsParams(
-                    regex=r"[\s\S]*?(?:<tool_call>[\s\S]*?</tool_call>\s*)+[\s\S]*"
+                    regex=_REQUIRED_TOOL_REGEX
                 )
         return request
 
@@ -141,7 +146,12 @@ class BielikToolParser(ToolParser):
 
         # current_text is cumulative. Consume each text range/closed call once;
         # never concatenate delta_text again or infer state from balanced counts.
-        if self.tool_call_start_token_id not in current_token_ids:
+        constraints = getattr(request, "structured_outputs", None)
+        required_output = constraints is not None and constraints.regex == _REQUIRED_TOOL_REGEX
+        # Guided decoding can spell the tags using ordinary tokens instead of
+        # their registered special IDs. Required output is known to consist
+        # only of calls; buffer partial text tags rather than leaking them.
+        if not required_output and self.tool_call_start_token_id not in current_token_ids:
             self._stream_text_offset = len(current_text)
             return DeltaMessage(content=delta_text) if delta_text else None
 
@@ -151,10 +161,15 @@ class BielikToolParser(ToolParser):
         while cursor < len(current_text):
             start = current_text.find(self.tool_call_start_token, cursor)
             if start < 0:
+                if required_output:
+                    if not current_text[cursor:].strip():
+                        cursor = len(current_text)
+                    break
                 content.append(current_text[cursor:])
                 cursor = len(current_text)
                 break
-            content.append(current_text[cursor:start])
+            if not required_output:
+                content.append(current_text[cursor:start])
             payload_start = start + len(self.tool_call_start_token)
             end = current_text.find(self.tool_call_end_token, payload_start)
             if end < 0:
