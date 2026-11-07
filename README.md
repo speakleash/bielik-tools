@@ -15,6 +15,8 @@ Install the client dependencies for the basic examples (tool calling, reasoning
 and structured outputs) in your Python environment:
 
 ```bash
+python -m venv .venv-client
+source .venv-client/bin/activate
 python -m pip install -r examples/requirements.txt
 ```
 
@@ -57,14 +59,25 @@ Choose the tool parser file matching your vLLM version:
 
 | vLLM version | Tool parser | Reasoning parser |
 |---|---|---|
-| ≥ 0.24.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
-| 0.15.0 – 0.23.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
+| ≥ 0.19.0, except 0.20.0 | `bielik_vllm_tool_parser.py` | `bielik_vllm_reasoning_parser.py` |
+| 0.20.0 | [combined plugin (PR #21)](https://github.com/speakleash/bielik-tools/pull/21) | same combined plugin |
+| 0.15.0 – 0.18.x | `bielik_vllm_tool_parser_v0.15.0.py` | `bielik_vllm_reasoning_parser.py` |
 | 0.13.0 – 0.14.x | `bielik_vllm_tool_parser_v0.13.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
-| ≤ 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
+| 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | `bielik_vllm_reasoning_parser_v0.13.0.py` |
+| < 0.12.0 | `bielik_vllm_tool_parser_v0.12.0.py` | — |
 
-The 0.24.0 tool-parser cut is the vLLM `ToolParser` API change
-(`__init__(tokenizer, tools=…)` plus `supports_required_and_named`).
-Reasoning parsers are unchanged across 0.15+.
+The 0.19.0 tool-parser cut is the vLLM `ToolParser` API change
+(`__init__(tokenizer, tools=…)`).
+This matrix assumes the parser compatibility fixes in
+[PR #17](https://github.com/speakleash/bielik-tools/pull/17), including the
+vLLM 0.32 protocol-import fallback, reasoning delimiter properties and legacy
+Mistral tokenizer imports. Merge those fixes before relying on these paths;
+the client example changes alone do not provide server compatibility.
+The special vLLM 0.20.0 path additionally requires PR #21 and its dependencies.
+For older vLLM releases, explicitly send `skip_special_tokens: false` when
+using reasoning, especially in non-streaming requests.
+Versions below 0.12 retain the legacy tool parser but are not covered by the
+GPU validation matrix.
 
 Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling.py) or [tool\_calling\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/tool_calling_streaming.py) to see how tool calling works in practice.
 
@@ -113,7 +126,12 @@ The reasoning parser separates generated reasoning from the final answer;
 selecting a parser alone does not add the advanced template's thinking prompt.
 The v3.1 pair instead supports `reasoning_effort` in `chat_template_kwargs`.
 `reasoning_streaming.py` sends both settings consistently, so it works with
-either pair.
+either pair. Its sample conversation exercises `none`, `medium`, then `none`.
+The client accepts both `reasoning` and `reasoning_content` response fields,
+including chunks that also contain final-answer content. If generation ends
+with reasoning only, it retains that field and warns that no final answer
+arrived; increase the token budget or check the template/parser pairing
+instead of treating reasoning as the answer.
 
 Then, run [reasoning\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/reasoning_streaming.py) to see how the model performs in reasoning mode.
 
