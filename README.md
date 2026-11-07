@@ -305,3 +305,17 @@ server needed):
 ```bash
 python -m pytest -q tests/test_streaming_tool_parser_v31.py tests/test_streaming_tool_parser_default.py
 ```
+
+## Test framework compatibility
+
+With a running Bielik server, prepare isolated dependencies and run all framework probes:
+
+```bash
+python scripts/test_frameworks.py --all --setup --model bielik-test
+```
+
+Later runs need only `python scripts/test_frameworks.py --all --model bielik-test`.
+The runner prints a combined result and saves one `summary.json`, retaining
+native logs. See [framework testing](tests/integrations/README.md) for server
+settings, subsets and separate BFCL/GuideLLM workloads. Known LiteLLM n=2
+streaming failures remain failures rather than being silently skipped.

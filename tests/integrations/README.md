@@ -1,4 +1,71 @@
-# Optional manual integration probes
+# One command for framework compatibility
+
+With an existing local Bielik server:
+
+```bash
+# First run: create four separate pinned environments, then run everything.
+python scripts/test_frameworks.py --all --setup
+
+# Later runs reuse those environments without installation.
+python scripts/test_frameworks.py --all
+```
+
+The defaults are `--model bielik-test --base-url http://127.0.0.1:8000/v1`
+and `--family v31` (Bielik 3.1/3.2). Set `--family v30` for the advanced
+Bielik 3.0 template. Setup requires uv and an already installed Python3.12;
+it never installs uv, Python, vLLM or model weights. Use `--python /path/to/python`
+if necessary. Only `--setup` can install/update dependencies. To prepare
+without contacting a model, add `--setup-only`.
+
+Environments live in `.framework-envs/`, one per framework; use `--env-root`
+to share them across worktrees. Missing environments or wrong pinned versions
+are errors, never skips. The runner checks the served model, runs the direct
+API matrix, then LiteLLM SDK/proxy, LangGraph, Pydantic AI and Inspect AI
+sequentially against that same server. It starts/stops only its own temporary
+loopback LiteLLM proxy, with random environment-only credentials. It never
+starts the model server or executes generated shell/code.
+
+The terminal prints one status/count per probe and the path to a single
+`summary.json`. A new private `.framework-results/<timestamp>/` directory
+holds that summary, native reports and logs (override with `--output-dir`).
+Existing directories are never overwritten. The summary includes dependency
+versions, every failing case, native report paths and completion status.
+Exit0 means the entire selected run passed, exit1 means test failures, exit2
+means missing dependencies, server/probe errors or timeouts. An interrupted
+run cannot leave a passing summary. Each probe has a finite `--timeout` and
+its owned process group is terminated, including workers, on interruption.
+
+Cases cover reasoning none/medium, full/streaming, tool choice, schema, history
+and safe synthetic tools as supported by each native probe. Adapter-specific
+cases remain extra coverage; the matrix is not identical across libraries.
+A failed framework case is not automatically blamed on the model or parser:
+inspect its native transcript alongside the direct API result. The known
+LiteLLM n=2 streaming issue is labelled only when the matching direct case
+passes; it still fails the run. The current complete `--all` run therefore
+returns1 for this documented upstream incompatibility, rather than hiding it.
+Record immutable checkpoint/vLLM/template/parser provenance alongside reports;
+a served-model alias alone does not identify the weights.
+
+For a subset, repeat `--framework`:
+
+```bash
+python scripts/test_frameworks.py --framework langgraph --framework pydantic-ai
+```
+
+BFCL and GuideLLM are separate optional longer workloads, excluded from --all:
+
+```bash
+python scripts/test_frameworks.py --benchmark bfcl --setup --bfcl-limit 5
+python scripts/test_frameworks.py --benchmark guidellm --setup --tokenizer /local/model
+```
+
+BFCL runs only the audited AST subset (no generated execution), with an explicit
+score1 gate for this runner. GuideLLM setup selects CPU-only PyTorch. Its default
+is a short load smoke test; longer native probe options are documented in its
+README. A model turn is not a conversation, and small runs do not establish
+stable latency percentiles. Raw native probes remain directly runnable.
+
+## Individual probes and last manual results
 
 These probes are opt-in. Default GitHub CPU CI compiles all Python files and
 runs the parser/client suite, but does not install the six framework/harness
