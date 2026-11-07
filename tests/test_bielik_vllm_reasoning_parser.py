@@ -90,3 +90,39 @@ def test_unrelated_initialization_error_propagates(parser_module, monkeypatch):
             FakeTokenizer(THINK_VOCAB),
             chat_template_kwargs={"enable_thinking": True},
         )
+
+
+def test_adjust_request_keeps_special_tokens_when_thinking():
+    # Bielik v3.0 marks <think>/</think> as special tokens; stripping them
+    # makes reasoning and answer indistinguishable.
+    module = _load("bielik_vllm_reasoning_parser.py")
+    request = type("Request", (), {"skip_special_tokens": True})()
+    on = module.BielikReasoningParser(
+        FakeTokenizer(THINK_VOCAB), chat_template_kwargs={"enable_thinking": True})
+    assert on.adjust_request(request).skip_special_tokens is False
+    request.skip_special_tokens = True
+    off = module.BielikReasoningParser(
+        FakeTokenizer(THINK_VOCAB), chat_template_kwargs={})
+    assert off.adjust_request(request).skip_special_tokens is True
+
+
+def test_prompt_with_think_tags_in_system_text_is_not_reasoning_end():
+    # The advanced template quotes <think>...</think> in the system prompt.
+    # vLLM checks the prompt with is_reasoning_end(); that must stay False so
+    # streaming starts in the reasoning phase.
+    module = _load("bielik_vllm_reasoning_parser.py")
+    vocab = {**THINK_VOCAB, "<|im_start|>": 20}
+    parser = module.BielikReasoningParser(
+        FakeTokenizer(vocab), chat_template_kwargs={"enable_thinking": True})
+    prompt = [20, 1, 10, 1, 11, 1, 20, 1]  # system mentions think tags
+    assert parser.is_reasoning_end(prompt) is False
+    assert parser.is_reasoning_end(prompt + [10, 1, 11, 1]) is True
+    assert parser.is_reasoning_end([10, 1, 11]) is True  # no turn marker
+
+
+def test_adjust_request_untouched_on_missing_think_tokens_fallback():
+    module = _load("bielik_vllm_reasoning_parser.py")
+    request = type("Request", (), {"skip_special_tokens": True})()
+    parser = module.BielikReasoningParser(
+        FakeTokenizer(NO_THINK_VOCAB), chat_template_kwargs={"enable_thinking": True})
+    assert parser.adjust_request(request).skip_special_tokens is True
