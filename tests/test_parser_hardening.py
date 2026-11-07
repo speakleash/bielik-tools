@@ -34,7 +34,7 @@ def test_v31_tool_parser_initialises_streaming_state(tokenizer):
 
 
 @pytest.mark.parametrize("filename", [
-    "bielik_vllm_reasoning_parser.py", "bielik_vllm_reasoning_parser_v3.1.py"])
+    "bielik_vllm_reasoning_parser.py"])
 def test_reasoning_wrapper_delegates_prompt_and_tag_hooks(filename):
     module = _load(filename)
     parser = module.BielikReasoningParser(
@@ -56,7 +56,7 @@ def test_reasoning_wrapper_delegates_prompt_and_tag_hooks(filename):
 
 
 @pytest.mark.parametrize("filename", [
-    "bielik_vllm_reasoning_parser.py", "bielik_vllm_reasoning_parser_v3.1.py"])
+    "bielik_vllm_reasoning_parser.py"])
 def test_reasoning_wrapper_hooks_are_noops_without_inner_support(filename):
     module = _load(filename)
     parser = module.BielikReasoningParser(FakeTokenizer(), chat_template_kwargs={})

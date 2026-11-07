@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @lru_cache(maxsize=None)
 def load_plugin(kind):
-    path = ROOT / 'tools' / (f'bielik_vllm_{kind}_parser.py' if kind == 'tool' else f'bielik_vllm_{kind}_parser_v3.1.py')
+    path = ROOT / 'tools' / f'bielik_vllm_{kind}_parser.py'
     spec = importlib.util.spec_from_file_location(f'bielik_{kind}_test', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

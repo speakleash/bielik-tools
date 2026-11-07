@@ -17,7 +17,6 @@ TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 PARSER_FILES = [
     "bielik_vllm_reasoning_parser.py",
     "bielik_vllm_reasoning_parser_v0.13.0.py",
-    "bielik_vllm_reasoning_parser_v3.1.py",
 ]
 THINK_VOCAB = {"<think>": 10, "</think>": 11, "a": 1}
 NO_THINK_VOCAB = {"a": 1}
@@ -126,3 +125,81 @@ def test_adjust_request_untouched_on_missing_think_tokens_fallback():
     parser = module.BielikReasoningParser(
         FakeTokenizer(NO_THINK_VOCAB), chat_template_kwargs={"enable_thinking": True})
     assert parser.adjust_request(request).skip_special_tokens is True
+
+
+# --------------------------------------------------------------------------
+# One parser for the advanced (enable_thinking) and v3.1/v3.2 (reasoning_effort)
+# templates.
+# --------------------------------------------------------------------------
+TURN_VOCAB = {**THINK_VOCAB, "<|im_start|>": 20, "<|im_end|>": 21}
+START, END, IM_START, IM_END, A = 10, 11, 20, 21, 1
+
+
+def _default_parser(**chat_kwargs):
+    module = _load("bielik_vllm_reasoning_parser.py")
+    return module.BielikReasoningParser(FakeTokenizer(TURN_VOCAB), chat_template_kwargs=chat_kwargs)
+
+
+@pytest.mark.parametrize("kwargs, thinking", [
+    ({}, False),
+    ({"enable_thinking": True}, True),
+    ({"enable_thinking": False}, False),
+    ({"reasoning_effort": "high"}, True),
+    ({"reasoning_effort": "low"}, True),
+    ({"reasoning_effort": "none"}, False),
+    ({"reasoning_effort": "NONE"}, False),
+    # reasoning_effort wins over enable_thinking (v3.1 template semantics)
+    ({"reasoning_effort": "none", "enable_thinking": True}, False),
+    ({"reasoning_effort": "medium", "enable_thinking": False}, True),
+    # what vLLM 0.32 builds for a top-level reasoning_effort
+    ({"reasoning_effort": "high", "enable_thinking": True}, True),
+])
+def test_thinking_switch(kwargs, thinking):
+    parser = _default_parser(**kwargs)
+    assert isinstance(parser._parser, DeepSeekR1ReasoningParser) is thinking
+
+
+def test_open_generation_prompt_keeps_thinking():
+    # v3.1 template, reasoning on: the turn ends with an open <think>.
+    parser = _default_parser(reasoning_effort="high")
+    prompt = [IM_START, A, A, IM_END, IM_START, A, START]
+    assert parser.is_reasoning_end(prompt) is False
+    assert parser.extract_reasoning("myślę</think>Wynik.", request=None) == ("myślę", "Wynik.")
+
+
+def test_closed_generation_prompt_returns_content():
+    # v3.1 template ignores enable_thinking and closes <think></think>; the
+    # whole output is the answer, also in non-streaming mode.
+    parser = _default_parser(enable_thinking=True)
+    prompt = [IM_START, A, IM_END, IM_START, A, START, END]
+    assert parser.is_reasoning_end(prompt) is True
+    assert parser.extract_reasoning("391", request=None) == (None, "391")
+    assert parser.is_reasoning_end([IM_START, A, START]) is True  # stays content
+
+
+@pytest.mark.parametrize("earlier", [
+    # system prompt quotes an example "<think>...</think>"
+    [IM_START, A, START, A, END, A, IM_END],
+    # an earlier assistant turn with closed reasoning
+    [IM_START, A, IM_END, IM_START, A, START, A, END, A, IM_END, IM_START, A, IM_END],
+])
+def test_think_tags_outside_the_current_turn_do_not_close_reasoning(earlier):
+    parser = _default_parser(enable_thinking=True)
+    assert parser.is_reasoning_end(earlier + [IM_START, A]) is False
+    assert parser.is_reasoning_end(earlier + [IM_START, A, START]) is False
+    quoted = 'Przykład: <tool_call>{"name": "x", "arguments": {}}</tool_call>'
+    reasoning, content = parser.extract_reasoning(quoted + "</think>Odpowiedź.", request=None)
+    assert reasoning == quoted  # a tool call quoted in reasoning stays reasoning
+    assert content == "Odpowiedź."
+
+
+def test_output_ids_without_turn_marker_do_not_switch_mode():
+    parser = _default_parser(reasoning_effort="high")
+    assert parser.is_reasoning_end([A, END, A]) is True
+    assert isinstance(parser._parser, DeepSeekR1ReasoningParser)
+
+
+def test_thinking_off_parser_is_unchanged_by_prompt():
+    parser = _default_parser()
+    assert parser.is_reasoning_end([IM_START, A, START, END]) is True
+    assert parser.extract_reasoning("<think>x</think>y", request=None) == (None, "<think>x</think>y")
