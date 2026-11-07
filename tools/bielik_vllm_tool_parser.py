@@ -111,22 +111,8 @@ def _is_forced_regex(regex) -> bool:
 
 
 def _tool_call_end(text: str, start: int) -> int:
-    """Find a closing wrapper outside JSON strings, respecting escaped quotes."""
-    quoted = escaped = False
-    for index in range(start, len(text)):
-        char = text[index]
-        if quoted:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                quoted = False
-        elif char == '"':
-            quoted = True
-        elif text.startswith("</tool_call>", index):
-            return index
-    return -1
+    """Use the same quote-aware scanner for complete and incremental input."""
+    return _StreamingBoundary().find(text, start)
 
 
 def _checked_tool_call(payload: str) -> tuple[dict, str]:
@@ -284,6 +270,7 @@ class BielikToolParser(ToolParser):
                 calls.append(ToolCall(type="function", function=FunctionCall(
                     name=call["name"], arguments=arguments)))
             except (ValueError, TypeError, RecursionError):
+                logger.warning("Invalid completed tool call in non-streaming output")
                 content.append(model_output[start:next_cursor])
             cursor = next_cursor
         text = "".join(content)

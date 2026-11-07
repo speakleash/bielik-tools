@@ -75,3 +75,20 @@ def test_stream_boundary_scanning_work_is_linear():
         found = boundary.find(CountedText(text[:end]), 0)
     assert found == len(text) - len('</tool_call>')
     assert reads[0] < len(text) + 100  # only a short split wrapper is revisited
+
+
+def test_unterminated_string_does_not_resynchronize_into_a_call(tokenizer, request_data):
+    text = '<tool_call>{"name":"calc","arguments":{"s":"abc}}</tool_call>' + CALL
+    full = TOOL(tokenizer, request_data.tools).extract_tool_calls(text, request_data)
+    assert not full.tools_called and full.content == text
+    assert flatten(collect(TOOL(tokenizer, request_data.tools), tokenizer, request_data, text, 1)) == []
+
+
+def test_whitespace_between_valid_calls_is_preserved_in_both_paths(tokenizer, request_data):
+    text = CALL + '\n' + CALL
+    full = TOOL(tokenizer, request_data.tools).extract_tool_calls(text, request_data)
+    assert full.content == "\n"
+    assert len(full.tool_calls) == 2
+    streamed = collect(TOOL(tokenizer, request_data.tools), tokenizer, request_data, text, 1)
+    assert ''.join(delta.content or '' for delta in streamed) == full.content
+    assert len(flatten(streamed)) == 2
