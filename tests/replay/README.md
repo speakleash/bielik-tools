@@ -31,3 +31,9 @@ by the operator: a client cannot infer them from a served-model alias.
 Keep captures with private conversations outside the repository. Output files
 are created exclusively so a previous regression artifact is not overwritten.
 Only reviewed synthetic captures should be committed here.
+
+Replay derives template kwargs from vLLM's own ChatCompletionRequest mapping.
+Malformed parser arguments remain a failure: the replay CLI saves an error
+for each affected path and exits1, even if both paths raise the same error.
+Literal-tag asymmetry remains an explicit detector regression rather than an
+xfail: capture/replay must continue preserving ordinary versus special IDs.
