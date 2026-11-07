@@ -21,7 +21,8 @@ from datetime import datetime
 from pathlib import Path
 
 import jinja2
-from jinja2.ext import loopcontrols
+from jinja2 import nodes
+from jinja2.ext import Extension, loopcontrols
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -67,7 +68,7 @@ TOOL_CHAT = [
 ]
 
 # (name, render kwargs, substrings that must appear, substrings that must not)
-CASES = [
+ADVANCED_CASES = [
     (
         "plain chat",
         {"messages": SIMPLE_CHAT},
@@ -113,6 +114,69 @@ CASES = [
 ]
 
 
+V32_CASES = [
+    (
+        "plain chat (reasoning_effort defaults to none)",
+        {"messages": SIMPLE_CHAT},
+        ["<|im_start|>system\n", "<|im_start|>user\n", "<|im_start|>assistant\n<think></think>"],
+        ["<tool_call>"],
+    ),
+    (
+        "with tools",
+        {"messages": TOOL_CHAT, "tools": [WEATHER_TOOL]},
+        ['"name": "get_weather"', "<tool_call>", "<|im_start|>tool\n"],
+        [],
+    ),
+    (
+        "with tools, tool_choice=required",
+        {"messages": TOOL_CHAT, "tools": [WEATHER_TOOL], "tool_choice": "required"},
+        ["You MUST invoke at least one tool"],
+        [],
+    ),
+    (
+        "reasoning_effort=high",
+        {"messages": SIMPLE_CHAT, "reasoning_effort": "high"},
+        ["Current reasoning effort: high", "<|im_start|>assistant\n<think>"],
+        ["<|im_start|>assistant\n<think></think>"],
+    ),
+    (
+        "with tools, reasoning_effort=medium",
+        {"messages": TOOL_CHAT, "tools": [WEATHER_TOOL], "reasoning_effort": "medium"},
+        ["Current reasoning effort: medium", '"name": "get_weather"'],
+        [],
+    ),
+]
+
+
+CASES_BY_FILE = {
+    "bielik_advanced_chat_template.jinja": ADVANCED_CASES,
+    "bielik_v3.2_chat_template.jinja": V32_CASES,
+}
+
+
+def cases_for(path, source):
+    """Cases for a known template file; otherwise guess from its switches."""
+    if path.name in CASES_BY_FILE:
+        return CASES_BY_FILE[path.name]
+    # v3.1/v3.2 templates validate reasoning_effort; the advanced one does not.
+    return V32_CASES if "reasoning_effort must be one of" in source else ADVANCED_CASES
+
+
+class GenerationExtension(Extension):
+    """Accept ``{% generation %}...{% endgeneration %}`` like transformers.
+
+    transformers uses the block to mark assistant tokens for training masks;
+    for rendering it is transparent.
+    """
+
+    tags = {"generation"}
+
+    def parse(self, parser):
+        lineno = next(parser.stream).lineno
+        body = parser.parse_statements(("name:endgeneration",), drop_needle=True)
+        return nodes.Scope(body, lineno=lineno)
+
+
 class TemplateError(Exception):
     """Raised by the ``raise_exception`` template global."""
 
@@ -140,7 +204,7 @@ def make_environment():
     env = ImmutableSandboxedEnvironment(
         trim_blocks=True,
         lstrip_blocks=True,
-        extensions=[loopcontrols],
+        extensions=[loopcontrols, GenerationExtension],
     )
     env.filters["tojson"] = _tojson
     env.globals["raise_exception"] = _raise_exception
@@ -150,13 +214,14 @@ def make_environment():
 
 def check_template(env, path):
     """Return a list of error messages for the template at ``path``."""
+    source = path.read_text(encoding="utf-8")
     try:
-        template = env.from_string(path.read_text(encoding="utf-8"))
+        template = env.from_string(source)
     except jinja2.TemplateError as exc:
         return [f"failed to compile: {exc!r}"]
 
     errors = []
-    for name, kwargs, must_contain, must_not_contain in CASES:
+    for name, kwargs, must_contain, must_not_contain in cases_for(path, source):
         context = {"bos_token": "<s>", "add_generation_prompt": True, **kwargs}
         try:
             rendered = template.render(**context)
@@ -203,7 +268,7 @@ def main(argv):
             for error in errors:
                 print(f"  - {error}")
         else:
-            print(f"ok   {path} ({len(CASES) + 1} cases)")
+            print(f"ok   {path} ({len(cases_for(path, path.read_text(encoding='utf-8'))) + 1} cases)")
     return 1 if failed else 0
 
 
