@@ -110,6 +110,69 @@ def _is_forced_regex(regex) -> bool:
         regex == _REQUIRED_TOOL_REGEX or regex.startswith(_NAMED_TOOL_PREFIX))
 
 
+def _tool_call_end(text: str, start: int) -> int:
+    """Find a closing wrapper outside JSON strings, respecting escaped quotes."""
+    quoted = escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif text.startswith("</tool_call>", index):
+            return index
+    return -1
+
+
+def _checked_tool_call(payload: str) -> tuple[dict, str]:
+    def invalid_constant(value):
+        raise ValueError(f"Non-JSON constant: {value}")
+    call = json.loads(payload, parse_constant=invalid_constant)
+    if (not isinstance(call, dict) or not isinstance(call.get("name"), str)
+            or not call["name"] or not isinstance(call.get("arguments"), dict)):
+        raise ValueError("Expected a tool name and an arguments object")
+    arguments = json.dumps(call["arguments"], ensure_ascii=False, allow_nan=False)
+    return call, arguments
+
+
+class _StreamingBoundary:
+    """Scan each payload character once, retaining split wrapper prefixes."""
+    def __init__(self):
+        self.start = None
+        self.offset = 0
+        self.quoted = self.escaped = False
+
+    def find(self, text: str, start: int) -> int:
+        if self.start != start:
+            self.start, self.offset = start, start
+            self.quoted = self.escaped = False
+        closing = "</tool_call>"
+        while self.offset < len(text):
+            index = self.offset
+            char = text[index]
+            if self.quoted:
+                if self.escaped:
+                    self.escaped = False
+                elif char == "\\":
+                    self.escaped = True
+                elif char == '"':
+                    self.quoted = False
+            elif char == '"':
+                self.quoted = True
+            elif char == "<":
+                if text.startswith(closing, index):
+                    return index
+                if len(text) - index < len(closing) and closing.startswith(text[index:]):
+                    return -1  # revisit only this short partial wrapper
+            self.offset += 1
+        return -1
+
+
 # Registered as "bielik" so --tool-call-parser bielik works when this file is
 # loaded via --tool-parser-plugin. Load only one Bielik tool parser file per
 # process: the legacy per-version files register the same name.
@@ -134,6 +197,7 @@ class BielikToolParser(ToolParser):
         self.current_tool_id: int = -1
         self.streamed_args_for_tool: list[str] = []
         self._stream_text_offset = 0
+        self._stream_boundary = _StreamingBoundary()
         self.tool_call_start_token: str = "<tool_call>"
         self.tool_call_end_token: str = "</tool_call>"
 
@@ -200,45 +264,31 @@ class BielikToolParser(ToolParser):
         request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
 
-        # sanity check; avoid unnecessary processing
-        if self.tool_call_start_token not in model_output:
-            return ExtractedToolCallInformation(tools_called=False,
-                                                tool_calls=[],
-                                                content=model_output)
-        else:
+        cursor, content, calls = 0, [], []
+        while cursor < len(model_output):
+            start = model_output.find(self.tool_call_start_token, cursor)
+            if start < 0:
+                content.append(model_output[cursor:])
+                break
+            content.append(model_output[cursor:start])
+            payload_start = start + len(self.tool_call_start_token)
+            end = _tool_call_end(model_output, payload_start)
+            if end < 0:
+                # Even valid JSON is not a complete call until its wrapper
+                # closes. A length-limited response must not execute early.
+                content.append(model_output[start:])
+                break
+            next_cursor = end + len(self.tool_call_end_token)
             try:
-                # there are two possible captures - between tags, or between a
-                # tag and end-of-string so the result of
-                # findall is an array of tuples where one is a function call and
-                # the other is None
-                function_call_tuples = self.tool_call_regex.findall(model_output)
-
-                # load the JSON, and then use it to build the Function and Tool Call
-                raw_function_calls = [
-                    json.loads(match[0] if match[0] else match[1])
-                    for match in function_call_tuples
-                ]
-                tool_calls = [
-                    ToolCall(
-                        type="function",
-                        function=FunctionCall(
-                            name=function_call["name"],
-                            # function call args are JSON but as a string
-                            arguments=json.dumps(function_call["arguments"],
-                                                 ensure_ascii=False)))
-                    for function_call in raw_function_calls
-                ]
-
-                content = model_output[:model_output.find(self.tool_call_start_token)]
-                return ExtractedToolCallInformation(
-                    tools_called=True,
-                    tool_calls=tool_calls,
-                    content=content if content else None)
-            except Exception:
-                logger.exception("Error in extracting tool call from response.")
-                return ExtractedToolCallInformation(tools_called=False,
-                                                    tool_calls=[],
-                                                    content=model_output)
+                call, arguments = _checked_tool_call(model_output[payload_start:end])
+                calls.append(ToolCall(type="function", function=FunctionCall(
+                    name=call["name"], arguments=arguments)))
+            except (ValueError, TypeError, RecursionError):
+                content.append(model_output[start:next_cursor])
+            cursor = next_cursor
+        text = "".join(content)
+        return ExtractedToolCallInformation(tools_called=bool(calls), tool_calls=calls,
+                                           content=text if text else None)
 
     def extract_tool_calls_streaming(
         self,
@@ -278,18 +328,14 @@ class BielikToolParser(ToolParser):
             if not required_output:
                 content.append(current_text[cursor:start])
             payload_start = start + len(self.tool_call_start_token)
-            end = current_text.find(self.tool_call_end_token, payload_start)
+            end = self._stream_boundary.find(current_text, payload_start)
             if end < 0:
                 cursor = start  # wait for the rest of this call; do not emit partial JSON
                 break
             next_cursor = end + len(self.tool_call_end_token)
             try:
-                call = json.loads(current_text[payload_start:end])
-                if (not isinstance(call, dict) or not isinstance(call.get("name"), str)
-                        or not call["name"] or not isinstance(call.get("arguments"), dict)):
-                    raise ValueError("Expected a tool name and an arguments object")
-                arguments = json.dumps(call["arguments"], ensure_ascii=False)
-            except (ValueError, TypeError):
+                call, arguments = _checked_tool_call(current_text[payload_start:end])
+            except (ValueError, TypeError, RecursionError):
                 # Preserve malformed completed blocks as text; never execute them.
                 logger.warning("Invalid completed tool call in streaming output")
                 content.append(current_text[start:next_cursor])
