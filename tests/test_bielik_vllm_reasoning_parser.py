@@ -90,3 +90,49 @@ def test_unrelated_initialization_error_propagates(parser_module, monkeypatch):
             FakeTokenizer(THINK_VOCAB),
             chat_template_kwargs={"enable_thinking": True},
         )
+
+
+V31 = "bielik_vllm_reasoning_parser_v3.1.py"
+CLOSED_PROMPT = [10, 11]   # v3.1 template: <think></think> already in the prompt
+OPEN_PROMPT = [1, 1]       # advanced template: prompt ends before any think tag
+
+
+def _v31(**kwargs):
+    return _load(V31).BielikReasoningParser(
+        FakeTokenizer(THINK_VOCAB), chat_template_kwargs=kwargs)
+
+
+def test_legacy_flag_with_closed_prompt_is_content():
+    # v3.1 template ignores enable_thinking and forces <think></think>.
+    parser = _v31(enable_thinking=True)
+    assert parser.is_reasoning_end(CLOSED_PROMPT) is True
+    assert parser.extract_reasoning("391.", request=None) == (None, "391.")
+
+
+def test_legacy_flag_with_open_prompt_keeps_reasoning_behaviour():
+    # Advanced template: the model opens <think> itself; nothing changes.
+    parser = _v31(enable_thinking=True)
+    assert parser.is_reasoning_end(OPEN_PROMPT) is False
+    assert parser.extract_reasoning("<think>a</think>b", request=None) == ("a", "b")
+    assert parser.extract_reasoning("a</think>b", request=None) == ("a", "b")
+    assert parser.extract_reasoning("<think>a", request=None)[0] == "a"
+    assert parser.extract_reasoning("tagless", request=None) == ("tagless", None)
+
+
+def test_prompt_state_is_recorded_from_the_first_call_only():
+    parser = _v31(enable_thinking=True)
+    parser.is_reasoning_end(OPEN_PROMPT)
+    parser.is_reasoning_end(CLOSED_PROMPT)  # later calls see generated ids
+    assert parser.extract_reasoning("a</think>b", request=None) == ("a", "b")
+
+
+def test_reasoning_effort_is_unaffected_by_prompt_state():
+    parser = _v31(reasoning_effort="high")
+    parser.is_reasoning_end(CLOSED_PROMPT)
+    assert parser.extract_reasoning("a</think>b", request=None) == ("a", "b")
+
+
+def test_legacy_flag_false_never_short_circuits():
+    parser = _v31(enable_thinking=False)
+    parser.is_reasoning_end(CLOSED_PROMPT)
+    assert parser.extract_reasoning("391.", request=None) == (None, "391.")

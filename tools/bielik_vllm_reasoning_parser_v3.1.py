@@ -61,10 +61,19 @@ class BielikReasoningParser(ReasoningParser):
 
         chat_kwargs = kwargs.get("chat_template_kwargs") or {}
         effort = chat_kwargs.get("reasoning_effort")
+        # True when thinking was inferred only from the legacy flag. The v3.1
+        # template ignores enable_thinking and forces an empty <think></think>
+        # in the prompt, so the whole output is content. vLLM calls
+        # is_reasoning_end(prompt_ids) once per request (streaming or not); the
+        # result tells us whether the prompt already closed the think block.
+        # The advanced template leaves it open, so nothing changes there.
+        self._legacy_flag = False
+        self._prompt_closed = None
         if effort is not None:
             enable_thinking = str(effort).lower() != "none"
         else:
             enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
+            self._legacy_flag = enable_thinking
 
         self._parser = None
         if enable_thinking:
@@ -79,7 +88,10 @@ class BielikReasoningParser(ReasoningParser):
             self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
-        return self._parser.is_reasoning_end(input_ids)
+        result = self._parser.is_reasoning_end(input_ids)
+        if self._legacy_flag and self._prompt_closed is None:
+            self._prompt_closed = result
+        return result
 
     def is_reasoning_end_streaming(
         self, input_ids: list[int], delta_ids: list[int]
@@ -92,6 +104,9 @@ class BielikReasoningParser(ReasoningParser):
     def extract_reasoning(
         self, model_output: str, request: ChatCompletionRequest | ResponsesRequest
     ) -> tuple[str | None, str | None]:
+        if self._legacy_flag and self._prompt_closed:
+            # Same as streaming, where the closed prompt makes vLLM emit content.
+            return None, model_output
         return self._parser.extract_reasoning(model_output, request)
 
     def extract_reasoning_streaming(
