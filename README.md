@@ -43,6 +43,19 @@ All server commands below assume the repository root is the working directory.
 
 Bielik models have been trained to generate structured outputs. Once the model is running in [vLLM](https://github.com/vllm-project/vllm), you can try the [structured_output.py](https://github.com/speakleash/bielik-tools/blob/main/examples/structured_output.py) example to generate structured outputs using OpenAI's [Completions](https://platform.openai.com/docs/api-reference/completions) and [Chat](https://platform.openai.com/docs/api-reference/chat) APIs.
 
+The example uses `response_format={"type": "json_schema", ...}` for chat
+requests. The legacy `guided_json` field is ignored by modern vLLM.
+Its reasoning example requires vLLM **0.32** with a matching reasoning parser:
+it sends `thinking_token_budget=256` in `extra_body` and `max_tokens=800`.
+The total output limit includes reasoning, so a separate thinking budget
+reserves room for the final JSON. Without it a model can use even a large
+output limit inside `<think>`, leaving `content` empty with
+`finish_reason="length"`. Increasing the total limit alone need not help.
+See vLLM's [thinking budget parameter](https://docs.vllm.ai/en/v0.32.0/api/vllm/sampling_params/).
+
+If generation reaches the total limit, treat its JSON as potentially incomplete.
+Keep reasoning separate; do not copy it into `content` as a substitute answer.
+
 ## Tool Calling
 
 To use function/tool calling, you need to enable the extended chat template. This can be done using the provided [advanced chat template](https://github.com/speakleash/bielik-tools/blob/main/tools/bielik_advanced_chat_template.jinja) and [tool parser](https://github.com/speakleash/bielik-tools/blob/main/tools/bielik_vllm_tool_parser.py). Start vLLM with the following command:
@@ -189,6 +202,13 @@ Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/ma
 Final contents of the report will be placed in `bielik_output/atrakcje.md`
 
 ### v3.1 streaming tool calls
+
+For `tool_choice="required"`, the v3.1 parser constrains the final output to
+tool-call blocks from the start, after any reasoning. A prose lead-in cannot
+consume the token budget before the first call. `auto` mode still permits
+ordinary text around calls. The complete call must fit `max_tokens`; an
+arbitrarily small limit can still truncate JSON. If reasoning is enabled,
+also reserve room for calls with a thinking budget on vLLM 0.32.
 
 `tools/bielik_vllm_tool_parser_v3.1.py` buffers a tag-wrapped tool call until
 `</tool_call>`, then emits its name and complete JSON arguments together. This

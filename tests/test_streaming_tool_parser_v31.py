@@ -43,8 +43,9 @@ def request_data():
         tool_choice='auto')
 
 
-def collect(parser, tokenizer, request, text, batch):
-    ids = tokenizer.encode(text, add_special_tokens=False)
+def collect(parser, tokenizer, request, text, batch, split_special_tokens=False):
+    ids = tokenizer.encode(text, add_special_tokens=False,
+                           split_special_tokens=split_special_tokens)
     previous_text, previous_ids, deltas = '', [], []
     for pos in range(0, len(ids), batch):
         current_ids = ids[:pos + batch]
