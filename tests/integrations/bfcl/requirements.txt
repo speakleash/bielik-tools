@@ -1,0 +1,2 @@
+# Install with --no-deps: only the audited Python AST-checker subset is used.
+bfcl-eval==2026.3.23
