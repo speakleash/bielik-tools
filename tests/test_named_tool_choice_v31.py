@@ -17,6 +17,8 @@ def named(name):
 
 
 NAMED = named("calc")
+# Module globals of the plugin (it is loaded by file path, not imported).
+PLUGIN = TOOL.__init__.__globals__
 
 
 @pytest.fixture
@@ -189,3 +191,50 @@ def test_named_grammar_rejects_invalid_outer_json_whitespace(
     assert re.fullmatch(regex, text) is None
     grammar = grammar_compiler.compile_grammar(xgrammar.Grammar.from_regex(regex))
     assert not xgrammar.GrammarMatcher(grammar).accept_string(text)
+
+
+@pytest.mark.parametrize("name", ["get-time", "get time", "pogoda_śląsk", "a.b(c)"])
+def test_named_grammar_accepts_unusual_function_names(tokenizer, request_data, grammar_compiler, name):
+    import xgrammar
+
+    request_data.tool_choice = named(name)
+    regex = TOOL(tokenizer, request_data.tools).adjust_request(request_data).structured_outputs.regex
+    call = '<tool_call>{"name": %s, "arguments": {}}</tool_call>' % json.dumps(name, ensure_ascii=False)
+    other = '<tool_call>{"name": "x%s", "arguments": {}}</tool_call>' % name
+    grammar = grammar_compiler.compile_grammar(xgrammar.Grammar.from_regex(regex))
+    assert xgrammar.GrammarMatcher(grammar).accept_string(call)
+    assert not xgrammar.GrammarMatcher(grammar).accept_string(other)
+
+
+@pytest.mark.parametrize("schema, depth", [
+    ({"type": "object"}, 1),
+    ({"type": "object", "properties": {"a": {"type": "string"}}}, 1),
+    ({"type": "object", "properties": {"a": {"type": "array", "items": {"type": "integer"}}}}, 2),
+    ({"type": "object", "properties": {"a": {"type": "object", "properties": {
+        "b": {"type": "object", "properties": {"c": {"type": "object"}}}}}}}, 4),
+    ({"type": "object", "properties": {"a": {"anyOf": [{"type": "string"}, {
+        "type": "array", "items": {"type": "array", "items": {"type": "object", "properties": {
+            "x": {"type": "array"}}}}}]}}}, 5),
+    (None, 0),
+])
+def test_schema_depth(schema, depth):
+    assert PLUGIN['_schema_depth'](schema) == depth
+
+
+def test_named_warns_when_parameters_exceed_the_nesting_limit(tokenizer, request_data, monkeypatch):
+    deep = {"type": "object", "properties": {"a": {"type": "object", "properties": {"b": {
+        "type": "object", "properties": {"c": {"type": "object", "properties": {"d": {"type": "object"}}}}}}}}}
+    request_data.tools[0].function.parameters = deep
+    request_data.tool_choice = NAMED
+    warnings = []
+    monkeypatch.setattr(PLUGIN['logger'], "warning", lambda *args: warnings.append(args))
+    TOOL(tokenizer, request_data.tools).adjust_request(request_data)
+    assert len(warnings) == 1 and "calc" in warnings[0]
+
+
+def test_named_does_not_warn_within_the_limit(tokenizer, request_data, monkeypatch):
+    request_data.tool_choice = NAMED
+    warnings = []
+    monkeypatch.setattr(PLUGIN['logger'], "warning", lambda *args: warnings.append(args))
+    TOOL(tokenizer, request_data.tools).adjust_request(request_data)
+    assert warnings == []

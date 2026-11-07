@@ -57,7 +57,30 @@ def _json_object_regex(depth: int = 3) -> str:
             rf"(?:,{ws}{string}{ws}:{ws}{value}{ws})*)?\}}")
 
 
-_NAMED_ARGUMENTS_REGEX = _json_object_regex()
+_NAMED_MAX_DEPTH = 4  # arguments object + 3 nested levels (_json_object_regex)
+_NAMED_ARGUMENTS_REGEX = _json_object_regex(_NAMED_MAX_DEPTH - 1)
+
+
+def _schema_depth(schema) -> int:
+    """Object/array nesting depth of a JSON schema (the root object counts 1)."""
+    if not isinstance(schema, dict):
+        return 0
+    depth = 0
+    for key in ("anyOf", "oneOf", "allOf"):
+        for sub in schema.get(key) or []:
+            depth = max(depth, _schema_depth(sub))
+    kind = schema.get("type")
+    kinds = kind if isinstance(kind, list) else [kind]
+    if "object" in kinds or "properties" in schema:
+        children = list((schema.get("properties") or {}).values())
+        if isinstance(schema.get("additionalProperties"), dict):
+            children.append(schema["additionalProperties"])
+        depth = max(depth, 1 + max((_schema_depth(c) for c in children), default=0))
+    if "array" in kinds or "items" in schema:
+        items = schema.get("items")
+        items = items if isinstance(items, list) else [items]
+        depth = max(depth, 1 + max((_schema_depth(i) for i in items), default=0))
+    return depth
 
 
 def _named_tool_regex(name: str) -> str:
@@ -139,6 +162,16 @@ class BielikToolParser(ToolParser):
                 # call other tools (and finish_reason ended up "stop").
                 # Force exactly one call of the requested function.
                 name = request.tool_choice.function.name
+                for tool in request.tools:
+                    function = getattr(tool, "function", None)
+                    if getattr(function, "name", None) == name and \
+                            _schema_depth(getattr(function, "parameters", None)) > _NAMED_MAX_DEPTH:
+                        logger.warning(
+                            "Named tool_choice %r: parameters nest deeper than %d levels; "
+                            "the constrained output cannot contain such arguments.",
+                            name, _NAMED_MAX_DEPTH)
+                # finish_reason becomes "tool_calls" (vLLM and OpenAI report
+                # "stop" for a forced function); clients usually check tool_calls.
                 request.tool_choice = "auto"
                 request.response_format = None
                 request.structured_outputs = StructuredOutputsParams(
