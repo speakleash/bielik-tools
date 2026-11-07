@@ -20,7 +20,7 @@ from vllm.entrypoints.openai.chat_completion.protocol import (
 try:
     from vllm.entrypoints.generate.base.protocol import DeltaMessage
 except ModuleNotFoundError as exc:
-    if not exc.name.startswith("vllm.entrypoints.generate"):
+    if not (exc.name or "").startswith("vllm.entrypoints.generate"):
         raise
     from vllm.entrypoints.openai.engine.protocol import DeltaMessage
 from vllm.entrypoints.openai.responses.protocol import ResponsesRequest

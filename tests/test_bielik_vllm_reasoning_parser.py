@@ -203,3 +203,12 @@ def test_thinking_off_parser_is_unchanged_by_prompt():
     parser = _default_parser()
     assert parser.is_reasoning_end([IM_START, A, START, END]) is True
     assert parser.extract_reasoning("<think>x</think>y", request=None) == (None, "<think>x</think>y")
+
+
+def test_without_the_prompt_thinking_follows_the_request_flags():
+    # vLLM 0.32 does not show the prompt to the parsers of extra non-streaming
+    # choices (n > 1) or with include_reasoning=false. The parser then keeps
+    # DeepSeek-R1 semantics: output without </think> counts as reasoning
+    # (documented limitation; reasoning_effort avoids it on v3.1/v3.2).
+    parser = _default_parser(enable_thinking=True)
+    assert parser.extract_reasoning("391", request=None) == ("391", None)
