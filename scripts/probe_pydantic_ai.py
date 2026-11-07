@@ -30,13 +30,13 @@ class Answer(BaseModel):
 
 EXPECTED = {"add": {"a": 17, "b": 23}, "weather": {"city": "Kraków"}}
 CASES = {
-    "plain": {"prompt": "Ile to17 razy23? Podaj wyłącznie liczbę.", "answer": "391", "tools": False},
+    "plain": {"prompt": "Ile to 17 razy 23? Podaj wyłącznie liczbę.", "answer": "391", "tools": False},
     "single": {"prompt": "Wywołaj add z a=17 i b=23. Podaj wyłącznie wynik liczbowy.", "counts": {"add": 1}, "choice": "required", "answer": "40"},
     "parallel": {"prompt": "Wywołaj równolegle add z a=17 i b=23 oraz weather dla Krakowa. Podaj wyniki.", "counts": {"add": 1, "weather": 1}, "contains": [40, 21]},
     "named": {"prompt": "Wywołaj add z a=17 i b=23. Nie wywołuj innych narzędzi. Podaj wynik zwrócony przez narzędzie.", "counts": {"add": 1}, "choice": ["add"], "contains": [40]},
     "none": {"prompt": "Wywołaj add z a=17 i b=23.", "choice": "none", "counts": {}},
     "retry": {"prompt": "Sprawdź weather dla Krakowa. Jeśli retryable=true, ponów dokładnie raz. Podaj temperaturę.", "counts": {"weather": 2}, "retry": True, "contains": [21]},
-    "schema": {"prompt": "Zwróć wynik17 razy23 w polu answer.", "schema": True, "tools": False},
+    "schema": {"prompt": "Zwróć wynik 17 razy 23 w polu answer.", "schema": True, "tools": False},
     "history": {"prompt": "A ile wynosi poprzedni wynik pomnożony przez dwa? Podaj wyłącznie liczbę.", "history": True, "tools": False, "answer": "80"},
     "validation_retry": {"prompt": "Wywołaj add z a=17 i b=23. Przy komunikacie o błędzie walidacji ponów z tymi samymi argumentami. Podaj wynik narzędzia.", "counts": {"add": 1}, "validation_retry": True, "contains": [40]},
 }
@@ -115,7 +115,7 @@ def scenario(base_url, model_name, family, name, enabled, streaming):
             return execute(ctx, "weather", {"city": city})
     history = None
     if case.get("history"):
-        history = [ModelRequest(parts=[UserPromptPart("Ile to17+23?")]),
+        history = [ModelRequest(parts=[UserPromptPart("Ile to 17 + 23?")]),
                    ModelResponse(parts=[ThinkingPart("17+23=40", id="reasoning", provider_name="openai"),
                                         TextPart("40")], finish_reason="stop", provider_name="openai")]
     messages, output = [], None
