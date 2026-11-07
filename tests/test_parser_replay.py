@@ -129,3 +129,43 @@ def test_prompt_primed_strip_decoder_preserves_leading_space():
     tok = PreTrainedTokenizerFast(tokenizer_object=backend)
     assert tok.decode([1]) == "Hello"
     assert replay_module.decoded_prefixes(tok, [0], [1]) == [" Hello"]
+
+
+@pytest.mark.parametrize("effort,explicit", [(None, {}), ("none", {}), ("medium", {}),
+    ("medium", {"enable_thinking": False}), ("none", {"reasoning_effort": "medium", "enable_thinking": True})])
+def test_replay_uses_native_request_template_mapping(tokenizer, monkeypatch, effort, explicit):
+    from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    record = make_capture(tokenizer, "hello", tools=False)
+    record["request"]["chat_template_kwargs"] = explicit
+    if effort is not None:
+        record["request"]["reasoning_effort"] = effort
+    seen = []
+    original = ChatCompletionRequest.build_chat_params
+    def mapping(self, *args, **kwargs):
+        params = original(self, *args, **kwargs)
+        seen.append(params.chat_template_kwargs)
+        return params
+    monkeypatch.setattr(ChatCompletionRequest, "build_chat_params", mapping)
+    parser, request = replay_module.parser_for(record, tokenizer)
+    assert len(seen) == 1
+    expected = original(request, None, "auto").chat_template_kwargs
+    assert seen[0] == expected
+    if "enable_thinking" in explicit:
+        assert seen[0]["enable_thinking"] is explicit["enable_thinking"]
+
+
+def test_cli_saves_invalid_parser_arguments_as_failure(tokenizer, monkeypatch, tmp_path):
+    from transformers import AutoTokenizer
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda *a, **k: tokenizer)
+    source, output = tmp_path / "capture.json", tmp_path / "result.json"
+    source.write_text(json.dumps(make_capture(tokenizer, "hello", tools=False)))
+    def malformed(*args):
+        from types import SimpleNamespace
+        return replay_module.normalized("", "", [SimpleNamespace(name="calc", arguments="invalid JSON")])
+    monkeypatch.setattr(replay_module, "replay", malformed)
+    assert replay_module.main(["replay", "--tokenizer", "offline", "--input", str(source),
+                               "--output", str(output)]) == 1
+    saved = json.loads(output.read_text())
+    assert not saved["parity"]
+    assert "JSONDecodeError" in saved["non_stream"]["error"]
+    assert "JSONDecodeError" in saved["stream"]["error"]

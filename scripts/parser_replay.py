@@ -150,10 +150,8 @@ def parser_for(record, tokenizer):
         tool_parser_cls = tool
 
     request = ChatCompletionRequest(**record["request"])
-    kwargs = dict(request.chat_template_kwargs or {})
-    if request.reasoning_effort is not None:
-        kwargs["reasoning_effort"] = request.reasoning_effort
-        kwargs["enable_thinking"] = request.reasoning_effort != "none"
+    # Use the server's own precedence, including explicit enable_thinking.
+    kwargs = request.build_chat_params(None, "auto").chat_template_kwargs
     parser = Combined(tokenizer, request.tools, chat_template_kwargs=kwargs)
     request = parser.adjust_request(request)
     return parser, request
@@ -232,9 +230,17 @@ def main(argv=None):
     if args.mode == "capture":
         result = capture(args.base_url, data, tokenizer)
     else:
-        result = {"non_stream": replay(data, tokenizer),
-                  "stream": replay(data, tokenizer, list(range(1, len(data["output_token_ids"]) + 1)))}
-        result["parity"] = result["non_stream"] == result["stream"]
+        result = {}
+        for mode, boundaries in (("non_stream", None),
+                ("stream", list(range(1, len(data["output_token_ids"]) + 1)))):
+            try:
+                result[mode] = replay(data, tokenizer, boundaries)
+            except Exception as error:
+                # Preserve malformed parser output as a failed artifact; never
+                # turn invalid arguments into a callable normalized payload.
+                result[mode] = {"error": f"{type(error).__name__}: {error}"}
+        result["parity"] = (not any("error" in result[mode] for mode in ("non_stream", "stream"))
+                            and result["non_stream"] == result["stream"])
     # Never silently replace a previous failure artifact.
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(result, output, ensure_ascii=False, indent=2)
