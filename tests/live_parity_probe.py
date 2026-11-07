@@ -241,6 +241,9 @@ def main():
         with open(args.json_out, "w", encoding="utf-8") as fh:
             json.dump(report, fh, ensure_ascii=False, indent=1)
     print(f"\n{total - failures} pass, {failures} fail / {total}")
+    if not total:
+        print("ERROR: no case was run (check --only)")
+        return 2
     return 1 if failures else 0
 
 

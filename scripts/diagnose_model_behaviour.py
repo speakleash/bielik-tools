@@ -27,8 +27,9 @@ dedicated token IDs.
       --tokenizer speakleash/Bielik-11B-v3.0-Instruct
 
 Needs a running vLLM >= 0.32 server (any Bielik parser pair) and the
-tokenizer files locally. Exit 0 unless --strict is given and an issue rate
-exceeds --max-issue-rate.
+tokenizer files locally. Exit status: 2 if any selected scenario could not be
+run (server unreachable, HTTP error, bad response) or none was selected; 1 with
+--strict when an issue rate exceeds --max-issue-rate; 0 otherwise.
 """
 from __future__ import annotations
 
@@ -236,6 +237,9 @@ class Diagnoser:
                     args = json.loads(args)
                 except ValueError:
                     args = None
+            if ("arguments" in call or "parameters" in call) and not isinstance(args, dict):
+                # [], null, 2 or a string that does not decode to an object
+                flags.add("call_arguments_not_object")
             if call["name"] not in known:
                 flags.add("call_unknown_tool")
             elif isinstance(args, dict):
@@ -317,6 +321,7 @@ def main():
     only = set(args.only.split(",")) if args.only else None
     out = open(args.jsonl_out, "w", encoding="utf-8") if args.jsonl_out else None
     totals, worst = Counter(), 0.0
+    errors, analysed = [], 0
     tag_totals = {"special": Counter(), "literal": Counter()}
 
     for name, (body, exp) in scenarios(args.family).items():
@@ -345,7 +350,9 @@ def main():
         except (urllib.error.URLError, OSError, ValueError, KeyError, RuntimeError) as exc:
             detail = exc.read().decode()[:200] if isinstance(exc, urllib.error.HTTPError) else ""
             print(f"## {name}: ERROR {type(exc).__name__}: {exc} {detail}")
+            errors.append(name)
             continue
+        analysed += 1
 
         n = len(results)
         counts = Counter(f for r in results for f in r["flags"])
@@ -375,6 +382,14 @@ def main():
         print(f"   {flag:40s} {c}")
     if not totals:
         print("   none")
+    # A run that could not analyse every selected scenario is a failure, with
+    # or without --strict: "no issues" must never mean "nothing was checked".
+    if errors:
+        print(f"\nERROR: {len(errors)} scenario(s) failed to run: {', '.join(errors)}")
+        return 2
+    if not analysed:
+        print("\nERROR: no scenario was run (check --only)")
+        return 2
     return 1 if args.strict and worst > args.max_issue_rate else 0
 
 

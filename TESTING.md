@@ -157,7 +157,7 @@ greedily. Per scenario it reports `k/N` for flags such as:
 | `think_open_omitted` | reasoning starts without `<think>` and ends with `</think>`; the DeepSeek-R1 parser treats it as reasoning (info) |
 | `think_when_off`, `think_missing_or_empty` | reasoning switch not obeyed |
 | `tool_call_in_reasoning`, `tool_call_unclosed`, `call_untagged_or_legacy_format` | call placement and format |
-| `call_invalid_json`, `call_parameters_key`, `call_arguments_as_string`, `call_unknown_tool`, `call_missing_required_arg`, `call_unknown_arg`, `call_wrong_arg_type` | call payload quality |
+| `call_invalid_json`, `call_parameters_key`, `call_arguments_as_string`, `call_arguments_not_object`, `call_unknown_tool`, `call_missing_required_arg`, `call_unknown_arg`, `call_wrong_arg_type` | call payload quality |
 | `call_missing`, `call_unexpected`, `call_irrelevant_tool` | calls when none are expected, none when expected, or a tool the request does not need |
 | `echo:literal_markup`, `echo:zwsp_escapes` | in the echo scenario: copied markup as plain text or with the template's escapes (info; literal copies are what the non-streaming parser may execute) |
 | `generated_im_start`, `zwsp_copied`, `stopped_with_</s>`, `length_limit`, `repetitive` | turn structure and termination |
@@ -167,7 +167,10 @@ A literal tag is invisible to the streaming parser, which keys on token IDs,
 but the non-streaming parser matches text, so any non-zero `literal:` rate
 outside guided scenarios produces stream/non-stream differences. Compare
 rates between checkpoints, not single completions. `--strict
---max-issue-rate 0.1` turns the report into a gate.
+--max-issue-rate 0.1` turns the report into a gate. The script exits with 2
+whenever a selected scenario could not be run (server unreachable, HTTP error)
+or none was selected, with or without `--strict`; `live_parity_probe.py` does
+the same when no case was run.
 
 ### Other checks
 
