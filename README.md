@@ -210,6 +210,14 @@ ordinary text around calls. The complete call must fit `max_tokens`; an
 arbitrarily small limit can still truncate JSON. If reasoning is enabled,
 also reserve room for calls with a thinking budget on vLLM 0.32.
 
+A named `tool_choice` (`{"type": "function", "function": {"name": ...}}`)
+forces exactly one call of that function. The constraint covers the function
+name and JSON syntax, not the function's parameter schema, and arguments may
+nest at most 4 levels (a warning is logged for deeper schemas). The response
+reports `finish_reason="tool_calls"`, whereas vLLM's built-in parsers and the
+OpenAI API report `"stop"` for a forced function; check `tool_calls` rather
+than `finish_reason`.
+
 `tools/bielik_vllm_tool_parser_v3.1.py` buffers a tag-wrapped tool call until
 `</tool_call>`, then emits its name and complete JSON arguments together. This
 makes the result independent of stream chunk boundaries, including a complete
