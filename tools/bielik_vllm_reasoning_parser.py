@@ -1,3 +1,17 @@
+"""Reasoning parser for Bielik models (v3.0, v3.1, v3.2) on vLLM >= 0.19.0.
+
+One parser for every Bielik chat template:
+
+* v3.1/v3.2 templates switch thinking with ``reasoning_effort``
+  (``none`` disables it);
+* the advanced v3.0 template switches it with ``enable_thinking``.
+
+``reasoning_effort`` wins when present (vLLM 0.32 also sets ``enable_thinking``
+for a top-level ``reasoning_effort``). When thinking is requested but the
+current assistant turn of the prompt already closes ``<think></think>`` (for
+example ``enable_thinking=true`` sent to a v3.1 template, which ignores that
+flag), the output is returned as content.
+"""
 from collections.abc import Sequence
 
 from vllm.entrypoints.openai.chat_completion.protocol import (
@@ -6,7 +20,7 @@ from vllm.entrypoints.openai.chat_completion.protocol import (
 try:
     from vllm.entrypoints.generate.base.protocol import DeltaMessage
 except ModuleNotFoundError as exc:
-    if not exc.name.startswith("vllm.entrypoints.generate"):
+    if not (exc.name or "").startswith("vllm.entrypoints.generate"):
         raise
     from vllm.entrypoints.openai.engine.protocol import DeltaMessage
 from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
@@ -32,17 +46,25 @@ def _warn_missing_think_tokens() -> None:
             "special tokens; thinking output is returned as content.")
 
 
-# Registered as "bielik". Do not load this plugin and the _v3.1 variant in the
-# same process (same registration name).
+def thinking_requested(chat_template_kwargs) -> bool:
+    """Whether the request asks for thinking (v3.1 or advanced template)."""
+    kwargs = chat_template_kwargs or {}
+    effort = kwargs.get("reasoning_effort")
+    if effort is not None:
+        return str(effort).strip().lower() != "none"
+    return bool(kwargs.get("enable_thinking", False))
+
+
+# Registered as "bielik". Load only one Bielik reasoning parser file per process
+# (the legacy per-version file registers the same name).
 @ReasoningParserManager.register_module("bielik")
 class BielikReasoningParser(ReasoningParser):
     """
     Reasoning parser for Bielik models.
 
-    Delegates to DeepSeekR1ReasoningParser when thinking is enabled
-    (``enable_thinking=True`` in ``chat_template_kwargs``), and to
-    IdentityReasoningParser otherwise — so that the entire model output
-    is returned as content, not reasoning.
+    Delegates to DeepSeekR1ReasoningParser when thinking is requested and to
+    IdentityReasoningParser otherwise, so that the entire model output is
+    returned as content.
     """
 
     @property
@@ -55,13 +77,12 @@ class BielikReasoningParser(ReasoningParser):
 
     def __init__(self, tokenizer: TokenizerLike, *args, **kwargs):
         super().__init__(tokenizer, *args, **kwargs)
-
-        chat_kwargs = kwargs.get("chat_template_kwargs") or {}
-        enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
+        self._init_args = (tokenizer, args, kwargs)
+        self._turn_start_id = self.vocab.get("<|im_start|>")
 
         self._parser = None
         self._thinking = False
-        if enable_thinking:
+        if thinking_requested(kwargs.get("chat_template_kwargs")):
             if (self.vocab.get("<think>") is None
                     or self.vocab.get("</think>") is None):
                 # Only missing delimiters trigger the content fallback. Other
@@ -85,17 +106,31 @@ class BielikReasoningParser(ReasoningParser):
             request.skip_special_tokens = False
         return request
 
-    def is_reasoning_end(self, input_ids: list[int]) -> bool:
-        # vLLM also calls this on the prompt. The advanced template mentions
-        # <think>...</think> in the system prompt, which must not look like
-        # "reasoning already ended"; only inspect the current assistant turn.
-        start = self.vocab.get("<|im_start|>")
-        if start is not None:
+    def _current_turn(self, input_ids: Sequence[int]) -> tuple[list[int], bool]:
+        """Token IDs from the last <|im_start|>, and whether one was found."""
+        if self._turn_start_id is not None:
             for i in range(len(input_ids) - 1, -1, -1):
-                if input_ids[i] == start:
-                    input_ids = input_ids[i:]
-                    break
-        return self._parser.is_reasoning_end(input_ids)
+                if input_ids[i] == self._turn_start_id:
+                    return list(input_ids[i:]), True
+        return list(input_ids), False
+
+    def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        # vLLM calls this with the rendered prompt. Only the current assistant
+        # turn counts: system prompts and earlier turns may quote
+        # <think>...</think> (the advanced template does), which must not look
+        # like "reasoning already ended".
+        turn, is_prompt = self._current_turn(input_ids)
+        ended = self._parser.is_reasoning_end(turn)
+        if ended and is_prompt and self._thinking:
+            # Thinking was requested, but the template already closed the
+            # reasoning block for this turn, so the output is the answer.
+            # Model output never contains <|im_start|>: this sees prompts only.
+            # vLLM 0.32 calls this before parsing a non-streaming response;
+            # extra choices (n > 1) get fresh parsers that are not told.
+            self._parser = IdentityReasoningParser(
+                self._init_args[0], *self._init_args[1], **self._init_args[2])
+            self._thinking = False
+        return ended
 
     def is_reasoning_end_streaming(
         self, input_ids: list[int], delta_ids: list[int]

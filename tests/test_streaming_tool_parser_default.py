@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @lru_cache(maxsize=None)
 def load_plugin(kind):
-    suffix = os.environ.get('BIELIK_TEST_TOOL_SUFFIX', '') if kind == 'tool' else '_v3.1'
+    suffix = os.environ.get('BIELIK_TEST_TOOL_SUFFIX', '') if kind == 'tool' else ''
     path = ROOT / 'tools' / f'bielik_vllm_{kind}_parser{suffix}.py'
     spec = importlib.util.spec_from_file_location(f'bielik_{kind}_test', path)
     module = importlib.util.module_from_spec(spec)

@@ -48,7 +48,7 @@ ToolParser = _load_sibling(
     "bielik_vllm_tool_parser.py", "_bielik_020_tool"
 ).BielikToolParser
 ReasoningParser = _load_sibling(
-    "bielik_vllm_reasoning_parser_v3.1.py", "_bielik_020_reasoning"
+    "bielik_vllm_reasoning_parser.py", "_bielik_020_reasoning"
 ).BielikReasoningParser
 
 
