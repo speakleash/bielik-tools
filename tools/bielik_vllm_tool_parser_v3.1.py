@@ -62,7 +62,11 @@ _NAMED_ARGUMENTS_REGEX = _json_object_regex(_NAMED_MAX_DEPTH - 1)
 
 
 def _schema_depth(schema) -> int:
-    """Object/array nesting depth of a JSON schema (the root object counts 1)."""
+    """Object/array nesting depth of a JSON schema (the root object counts 1).
+
+    Best effort, used only for a warning: ``$ref``/``$defs`` and
+    ``prefixItems`` are not followed.
+    """
     if not isinstance(schema, dict):
         return 0
     depth = 0
