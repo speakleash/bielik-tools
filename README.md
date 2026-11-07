@@ -123,6 +123,11 @@ which allows a single call and forbids `<` inside arguments, and they ignore a
 named `tool_choice`. These limitations were not re-tested on those vLLM
 versions; use vLLM 0.24+ with `bielik_vllm_tool_parser.py` where possible.
 
+Migration: `tools/bielik_vllm_tool_parser_v3.1.py` was removed. Point
+`--tool-parser-plugin` at `tools/bielik_vllm_tool_parser.py` instead; with the
+old path vLLM only logs the import error and then fails at startup because
+the `bielik` tool parser is not registered.
+
 The compatibility table describes vLLM API variants, not Bielik model versions.
 For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
 backport path.
@@ -216,7 +221,10 @@ tool-call blocks from the start, after any reasoning. A prose lead-in cannot
 consume the token budget before the first call. `auto` mode still permits
 ordinary text around calls. The complete call must fit `max_tokens`; an
 arbitrarily small limit can still truncate JSON. If reasoning is enabled,
-also reserve room for calls with a thinking budget on vLLM 0.32.
+also reserve room for calls with a thinking budget on vLLM 0.32. The grammar
+starts after reasoning ends, so `required` with thinking needs the reasoning
+parser (`--reasoning-parser bielik`); without it a forced call cannot be
+preceded by a `<think>` block.
 
 A named `tool_choice` (`{"type": "function", "function": {"name": ...}}`)
 forces exactly one call of that function. The constraint covers the function
