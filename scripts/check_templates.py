@@ -148,9 +148,18 @@ V32_CASES = [
 ]
 
 
-def cases_for(source):
-    """v3.1/v3.2 templates switch thinking with reasoning_effort."""
-    return V32_CASES if "reasoning_effort" in source else ADVANCED_CASES
+CASES_BY_FILE = {
+    "bielik_advanced_chat_template.jinja": ADVANCED_CASES,
+    "bielik_v3.2_chat_template.jinja": V32_CASES,
+}
+
+
+def cases_for(path, source):
+    """Cases for a known template file; otherwise guess from its switches."""
+    if path.name in CASES_BY_FILE:
+        return CASES_BY_FILE[path.name]
+    # v3.1/v3.2 templates validate reasoning_effort; the advanced one does not.
+    return V32_CASES if "reasoning_effort must be one of" in source else ADVANCED_CASES
 
 
 class GenerationExtension(Extension):
@@ -212,7 +221,7 @@ def check_template(env, path):
         return [f"failed to compile: {exc!r}"]
 
     errors = []
-    for name, kwargs, must_contain, must_not_contain in cases_for(source):
+    for name, kwargs, must_contain, must_not_contain in cases_for(path, source):
         context = {"bos_token": "<s>", "add_generation_prompt": True, **kwargs}
         try:
             rendered = template.render(**context)
@@ -259,7 +268,7 @@ def main(argv):
             for error in errors:
                 print(f"  - {error}")
         else:
-            print(f"ok   {path} ({len(cases_for(path.read_text(encoding='utf-8'))) + 1} cases)")
+            print(f"ok   {path} ({len(cases_for(path, path.read_text(encoding='utf-8'))) + 1} cases)")
     return 1 if failed else 0
 
 
