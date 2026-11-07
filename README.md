@@ -115,17 +115,6 @@ Use `--chat-template` to supply the matching template explicitly. Load only one
 tool parser and one reasoning parser: the variants register the same name,
 `bielik`.
 
-`tools/bielik_v3.2_chat_template.jinja` is the chat template of Bielik 3.1 and
-3.2. Pass it with `--chat-template` when the checkpoint does not ship it.
-Thinking is switched with `reasoning_effort` (`none|low|medium|high|max`,
-default `none`); `enable_thinking` is ignored. The template rejects a
-`tool_choice` in `chat_template_kwargs` other than `required` or `none`. It
-escapes control tags in system, user and tool text, but keeps assistant
-content and reasoning raw by default, as the models were trained
-(`sanitize_assistant_content` / `sanitize_assistant_reasoning` enable
-escaping). Reasoning from earlier turns is dropped unless
-`think_render_option="preserved"`.
-
 The compatibility table describes vLLM API variants, not Bielik model versions.
 For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
 backport path.
@@ -139,6 +128,19 @@ template remains an available legacy option, not a required workaround.
 On 24 GB GPUs, the BF16-to-FP8 load path in vLLM 0.13–0.15 can also exceed
 VRAM temporarily. A checkpoint already serialized in FP8 avoids that peak;
 reducing the KV-cache allocation alone does not remove the weight-loading peak.
+
+## Chat template for Bielik 3.1 and 3.2
+
+`tools/bielik_v3.2_chat_template.jinja` is the chat template of Bielik 3.1 and
+3.2. Pass it with `--chat-template` when the checkpoint does not ship it.
+Thinking is switched with `reasoning_effort` (`none|low|medium|high|max`,
+default `none`); `enable_thinking` is ignored. The template rejects a
+`tool_choice` in `chat_template_kwargs` other than `required` or `none`. It
+escapes control tags in system, user and tool text, but keeps assistant
+content and reasoning raw by default, as the models were trained
+(`sanitize_assistant_content` / `sanitize_assistant_reasoning` enable
+escaping). Reasoning from earlier turns is dropped unless
+`think_render_option="preserved"`.
 
 ## Reasoning
 
