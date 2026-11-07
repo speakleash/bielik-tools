@@ -108,12 +108,25 @@ Then, run [tool\_calling.py](https://github.com/speakleash/bielik-tools/blob/mai
 
 ## Template and parser variants
 
-The commands in this README use the advanced template and the parser files
-without a `_v3.1` suffix. The `_v3.1.py` parsers are a separate pair for the
-v3.1 chat template; they do not select or install that template automatically.
-Use `--chat-template` to supply the matching template explicitly. Load only one
+The commands in this README use the advanced template.
+`bielik_vllm_tool_parser.py` serves every Bielik chat template (the advanced
+template for 3.0 and the v3.1/v3.2 templates). Reasoning still has a separate
+`bielik_vllm_reasoning_parser_v3.1.py` for the `reasoning_effort` switch of the
+v3.1 template. Parsers do not select or install a template; use
+`--chat-template` to supply the matching template explicitly. Load only one
 tool parser and one reasoning parser: the variants register the same name,
 `bielik`.
+
+The per-version legacy tool parsers (`_v0.12.0`, `_v0.13.0`, `_v0.15.0` and the
+native 0.20 plugin) are frozen. They keep the earlier `required` constraint,
+which allows a single call and forbids `<` inside arguments, and they ignore a
+named `tool_choice`. These limitations were not re-tested on those vLLM
+versions; use vLLM 0.24+ with `bielik_vllm_tool_parser.py` where possible.
+
+Migration: `tools/bielik_vllm_tool_parser_v3.1.py` was removed. Point
+`--tool-parser-plugin` at `tools/bielik_vllm_tool_parser.py` instead; with the
+old path vLLM only logs the import error and then fails at startup because
+the `bielik` tool parser is not registered.
 
 The compatibility table describes vLLM API variants, not Bielik model versions.
 For v3.2 the support target is vLLM 0.24.0+; legacy adapters are not a v3.2
@@ -201,14 +214,17 @@ vllm serve speakleash/Bielik-11B-v3.0-Instruct \
 Then, run [crewai_to_file.py](https://github.com/speakleash/bielik-tools/blob/main/examples/crewai_to_file.py)
 Final contents of the report will be placed in `bielik_output/atrakcje.md`
 
-### v3.1 streaming tool calls
+### Streaming tool calls and forced tool choice
 
-For `tool_choice="required"`, the v3.1 parser constrains the final output to
+For `tool_choice="required"`, the tool parser constrains the final output to
 tool-call blocks from the start, after any reasoning. A prose lead-in cannot
 consume the token budget before the first call. `auto` mode still permits
 ordinary text around calls. The complete call must fit `max_tokens`; an
 arbitrarily small limit can still truncate JSON. If reasoning is enabled,
-also reserve room for calls with a thinking budget on vLLM 0.32.
+also reserve room for calls with a thinking budget on vLLM 0.32. The grammar
+starts after reasoning ends, so `required` with thinking needs the reasoning
+parser (`--reasoning-parser bielik`); without it a forced call cannot be
+preceded by a `<think>` block.
 
 A named `tool_choice` (`{"type": "function", "function": {"name": ...}}`)
 forces exactly one call of that function. The constraint covers the function
@@ -218,7 +234,7 @@ reports `finish_reason="tool_calls"`, whereas vLLM's built-in parsers and the
 OpenAI API report `"stop"` for a forced function; check `tool_calls` rather
 than `finish_reason`.
 
-`tools/bielik_vllm_tool_parser_v3.1.py` buffers a tag-wrapped tool call until
+`tools/bielik_vllm_tool_parser.py` buffers a tag-wrapped tool call until
 `</tool_call>`, then emits its name and complete JSON arguments together. This
 makes the result independent of stream chunk boundaries, including a complete
 call or several calls in one chunk. Text outside calls remains incremental.
@@ -230,5 +246,5 @@ Parser-only regression tests (vLLM environment plus pytest; no weights or model
 server needed):
 
 ```bash
-python -m pytest -q tests/test_streaming_tool_parser_v31.py
+python -m pytest -q tests/test_streaming_tool_parser_v31.py tests/test_streaming_tool_parser_default.py
 ```

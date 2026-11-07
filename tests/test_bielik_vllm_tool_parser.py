@@ -73,7 +73,9 @@ class TestAdjustRequest:
     @pytest.mark.parametrize("output", [
         '<tool_call>{"name": "get_weather", "arguments": {"city": "Kraków"}}</tool_call>',
         '<tool_call> {"name": "get_weather", "arguments": {}}</tool_call>',
-        '<think>Użytkownik pyta o pogodę.</think>\n'
+        # '<' inside arguments (HTML, comparisons) must not end the call early.
+        '<tool_call>{"name": "search", "arguments": {"q": "<div>a<b</div>"}}</tool_call>',
+        '<tool_call>{"name": "get_weather", "arguments": {"city": "Kraków"}}</tool_call>\n'
         '<tool_call>{"name": "get_weather", "arguments": {"city": "Gdańsk"}}</tool_call>',
     ])
     def test_required_regex_accepts_tool_call_output(self, parser, make_request, output):
@@ -84,6 +86,10 @@ class TestAdjustRequest:
         "Dzień dobry!",
         '{"name": "get_weather", "arguments": {}}',
         "<think>Myślę.</think>Odpowiedź bez narzędzia.",
+        # The grammar applies after reasoning has ended; a second think block
+        # there would put reasoning into content.
+        '<think>Użytkownik pyta o pogodę.</think>\n'
+        '<tool_call>{"name": "get_weather", "arguments": {"city": "Gdańsk"}}</tool_call>',
     ])
     def test_required_regex_rejects_plain_answers(self, parser, make_request, output):
         regex = parser.adjust_request(make_request(tool_choice="required")).structured_outputs.regex
