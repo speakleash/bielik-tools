@@ -1,6 +1,14 @@
 import logging
 
-from termcolor import colored
+try:
+    from termcolor import colored
+except ModuleNotFoundError as exc:
+    if exc.name != "termcolor":
+        raise
+
+    def colored(text, *args, **kwargs):
+        """Keep the example usable without optional terminal colors."""
+        return str(text)
 
 from _vllm_env import make_client
 

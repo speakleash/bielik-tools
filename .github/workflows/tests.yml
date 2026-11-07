@@ -1,0 +1,89 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  VLLM_VERSION: "0.32.0"
+  # No model weights or Hub access are needed for these parser/client tests.
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  VLLM_NO_USAGE_STATS: "1"
+
+jobs:
+  lint:
+    name: syntax and templates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Byte-compile Python sources
+        run: python -m py_compile tools/*.py examples/*.py scripts/*.py tests/*.py
+
+      - name: Install Jinja2
+        run: python -m pip install "jinja2>=3.1,<4"
+
+      - name: Render-check chat templates
+        run: python scripts/check_templates.py
+
+  tests:
+    name: parsers (vLLM 0.32 CPU)
+    # The official release wheel targets glibc 2.39 / x86_64.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: .github/workflows/tests.yml
+
+      # Use the actual CPU release, whose requirements select CPU PyTorch.
+      # Avoid installing the CUDA wheel and its GPU-only dependency stack.
+      - name: Install vLLM CPU and pytest
+        run: >-
+          python -m pip install
+          "https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cpu-cp38-abi3-manylinux_2_39_x86_64.whl"
+          "pytest>=8,<10"
+          --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Check CPU runtime and parser imports
+        shell: python
+        run: |
+          import importlib.metadata
+          import importlib.util
+          import os
+
+          import torch
+          import vllm
+
+          version = importlib.metadata.version("vllm")
+          assert version == os.environ["VLLM_VERSION"] + "+cpu", version
+          assert torch.version.cuda is None, torch.__version__
+          for kind in ("tool", "reasoning"):
+              path = f"tools/bielik_vllm_{kind}_parser.py"
+              spec = importlib.util.spec_from_file_location(f"bielik_{kind}", path)
+              spec.loader.exec_module(importlib.util.module_from_spec(spec))
+          print(f"vLLM {version}; torch {torch.__version__}; parser imports OK")
+
+      # No tests collected is a failure: the repository already has a suite.
+      - name: Run pytest
+        run: python -m pytest tests -q -p no:cacheprovider
