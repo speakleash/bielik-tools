@@ -92,3 +92,26 @@ def test_stream_rejects_non_json_constants():
     delta = {"tool_calls": [{"index": 0, "id": "x", "function": {"name": "add", "arguments": '{"a":NaN}'}}]}
     with pytest.raises(api.ProtocolError, match="Non-JSON"):
         api.read_stream(stream(event(delta, finish="tool_calls")))
+
+
+def test_repeated_tool_id_is_identity_not_concatenated_text():
+    first = {"tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "add", "arguments": '{"a":'}}]}
+    second = {"tool_calls": [{"index": 0, "id": "call_1", "function": {"arguments": '17,"b":23}'}}]}
+    result = api.read_stream(stream(event(first), event(second, finish="tool_calls")))
+    assert result["choices"][0]["tool_calls"][0]["id"] == "call_1"
+    second["tool_calls"][0]["id"] = "changed"
+    with pytest.raises(api.ProtocolError, match="ID changed"):
+        api.read_stream(stream(event(first), event(second, finish="tool_calls")))
+
+
+def test_only_named_choice_accepts_legacy_stop_finish():
+    import sys
+    sys.path.insert(0, str(PATH.parent))
+    spec = importlib.util.spec_from_file_location("matrix_finish_test", PATH.parents[1] / "tests" / "live_api_matrix.py")
+    matrix = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(matrix)
+    for name, _, expected in matrix.cases("v31"):
+        if name.startswith("named-"):
+            assert set(expected["finish"]) == {"stop", "tool_calls"}
+        elif name.startswith(("required-", "auto-")):
+            assert expected["finish"] == ["tool_calls"]
