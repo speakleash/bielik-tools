@@ -1,0 +1,29 @@
+{
+  "name": "bielik-typescript-examples",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TypeScript examples for Bielik v3.1 over OpenAI-compatible APIs (vLLM, llama.cpp, Ollama)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "chat": "tsx src/chat.ts",
+    "streaming": "tsx src/streaming.ts",
+    "tools": "tsx src/tool-calling.ts",
+    "structured": "tsx src/structured-output.ts",
+    "reasoning": "tsx src/reasoning.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:live": "BIELIK_LIVE=1 node --import tsx --test test/live.test.ts"
+  },
+  "dependencies": {
+    "openai": "^7.57.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
