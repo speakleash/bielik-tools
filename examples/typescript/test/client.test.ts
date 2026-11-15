@@ -9,6 +9,7 @@ import {
   parseToolArguments,
   withReasoning,
 } from "../src/client.ts";
+import { parseCar } from "../src/structured-output.ts";
 import { runToolLoop, type LocalTool } from "../src/tool-loop.ts";
 import { chunk, completion, mockFetch } from "./mock-server.ts";
 
@@ -53,6 +54,22 @@ describe("reasoning helpers", () => {
     assert.deepEqual(body.chat_template_kwargs, { reasoning_effort: "high" });
     assert.ok(!("enable_thinking" in (body.chat_template_kwargs as object)));
     assert.equal(getReasoning(response.choices[0]!.message), "2, 3, 5...");
+  });
+
+  it("merges reasoning_effort into existing chat_template_kwargs", async () => {
+    const server = mockFetch([{ json: completion({ content: "ok" }) }]);
+    const { client, model } = makeClient(config, { fetch: server.fetch });
+    const params = {
+      model,
+      messages: [{ role: "user" as const, content: "?" }],
+      chat_template_kwargs: { provider_system_prompt: false },
+    };
+    await client.chat.completions.create(withReasoning(params, "high"));
+    assert.deepEqual(server.requests[0]!.body.chat_template_kwargs, {
+      provider_system_prompt: false,
+      reasoning_effort: "high",
+    });
+    assert.equal(server.requests[0]!.body.reasoning_effort, "high");
   });
 });
 
@@ -138,6 +155,49 @@ describe("runToolLoop", () => {
     assert.equal((server.requests[0]!.body.tools as unknown[]).length, 1);
   });
 
+  it("turns unserializable tool results into tool-error content", async () => {
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    const tools: LocalTool[] = [
+      {
+        definition: { type: "function", function: { name: "bigint", parameters: { type: "object", properties: {} } } },
+        run: () => ({ value: 1n }),
+      },
+      {
+        definition: { type: "function", function: { name: "cycle", parameters: { type: "object", properties: {} } } },
+        run: () => cyclic,
+      },
+    ];
+    const server = mockFetch([
+      {
+        json: completion(
+          {
+            tool_calls: [
+              { id: "c1", type: "function", function: { name: "bigint", arguments: "{}" } },
+              { id: "c2", type: "function", function: { name: "cycle", arguments: "{}" } },
+            ],
+          },
+          "tool_calls",
+        ),
+      },
+      { json: completion({ content: "done" }) },
+    ]);
+    const { client, model } = makeClient(config, { fetch: server.fetch });
+    const result = await runToolLoop({ client, model, tools, messages: [{ role: "user", content: "?" }] });
+
+    assert.equal(result.answer, "done");
+    assert.match(JSON.stringify(result.toolCalls[0]!.result), /BigInt|serialize/i);
+    assert.match(JSON.stringify(result.toolCalls[1]!.result), /circular|cyclic|Converting/i);
+
+    const second = server.requests[1]!.body.messages as { role: string; content?: string }[];
+    const toolMessages = second.filter((m) => m.role === "tool");
+    assert.equal(toolMessages.length, 2);
+    for (const message of toolMessages) {
+      const parsed = JSON.parse(message.content!);
+      assert.equal(typeof parsed.error, "string");
+    }
+  });
+
   it("gives up after maxRounds", async () => {
     const call = completion({ tool_calls: [{ id: "c", type: "function", function: { name: "get_weather", arguments: '{"city":"Kraków"}' } }] }, "tool_calls");
     const server = mockFetch([{ json: call }, { json: call }]);
@@ -146,5 +206,17 @@ describe("runToolLoop", () => {
       runToolLoop({ client, model, tools: [weather], messages: [], maxRounds: 2 }),
       /no final answer after 2 rounds/,
     );
+  });
+});
+
+describe("parseCar", () => {
+  const valid = { brand: "A", model: "B", car_type: "kombi", reason: "C" };
+
+  it("accepts objects with only schema fields", () => {
+    assert.deepEqual(parseCar(JSON.stringify(valid)), valid);
+  });
+
+  it("rejects keys that are not in the schema", () => {
+    assert.throws(() => parseCar(JSON.stringify({ ...valid, price: 1 })), /unexpected field: price/);
   });
 });

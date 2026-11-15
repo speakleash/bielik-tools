@@ -89,7 +89,17 @@ type ChatStream = ChatCompletionCreateParamsStreaming;
 
 /** Add Bielik reasoning fields to a request without fighting the SDK types. */
 export function withReasoning<T extends Chat | ChatStream>(params: T, effort: ReasoningEffort): T {
-  return { ...params, ...reasoningParams(effort) } as T;
+  const extra = reasoningParams(effort);
+  const existing = (params as { chat_template_kwargs?: unknown }).chat_template_kwargs;
+  const kwargs =
+    existing && typeof existing === "object" && !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {};
+  return {
+    ...params,
+    ...extra,
+    chat_template_kwargs: { ...kwargs, ...extra.chat_template_kwargs },
+  } as T;
 }
 
 /**

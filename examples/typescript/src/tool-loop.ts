@@ -60,17 +60,20 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<ToolLoopRes
       const tool = byName.get(call.function.name);
       let result: unknown;
       let args: Record<string, unknown> = {};
+      let content: string;
       try {
         if (!tool) throw new Error(`unknown tool: ${call.function.name}`);
         // Tool arguments are model output: validate before acting on them.
         args = parseToolArguments(call.function.arguments);
         result = await tool.run(args);
+        content = JSON.stringify(result);
       } catch (error) {
         result = { error: error instanceof Error ? error.message : String(error) };
+        content = JSON.stringify(result);
       }
       executed.push({ name: call.function.name, args, result });
       options.onToolCall?.(call.function.name, args, result);
-      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      messages.push({ role: "tool", tool_call_id: call.id, content });
     }
   }
   throw new Error(`no final answer after ${maxRounds} rounds of tool calls`);

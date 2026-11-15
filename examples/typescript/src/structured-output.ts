@@ -2,6 +2,8 @@
  * Structured output with `response_format: json_schema`. The server
  * constrains decoding to the schema; the result is still validated here.
  */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { makeClient } from "./client.ts";
@@ -31,59 +33,75 @@ function stripCodeFence(text: string): string {
   return match ? match[1]! : text.trim();
 }
 
-function parseCar(text: string): Car {
-  const value = JSON.parse(text) as Partial<Car>;
+export function parseCar(text: string): Car {
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("expected a JSON object");
+  }
+  const record = value as Record<string, unknown>;
+  const allowed = new Set(Object.keys(schema.properties));
+  const extra = Object.keys(record).filter((key) => !allowed.has(key));
+  if (extra.length) throw new Error(`unexpected field: ${extra.join(", ")}`);
+  const car = value as Partial<Car>;
   for (const key of schema.required) {
-    if (typeof value[key] !== "string") throw new Error(`missing or invalid field: ${key}`);
+    if (typeof car[key] !== "string") throw new Error(`missing or invalid field: ${key}`);
   }
-  if (!schema.properties.car_type.enum.includes(value.car_type as Car["car_type"])) {
-    throw new Error(`car_type outside the enum: ${value.car_type}`);
+  if (!schema.properties.car_type.enum.includes(car.car_type as Car["car_type"])) {
+    throw new Error(`car_type outside the enum: ${car.car_type}`);
   }
-  return value as Car;
+  return car as Car;
 }
 
-const { client, model } = makeClient();
-const messages: ChatCompletionMessageParam[] = [
-  {
-    role: "user",
-    content: "Jaki samochód poleciłbyś czteroosobowej rodzinie w Polsce? Odpowiedz w JSON: marka, model, typ nadwozia i krótkie uzasadnienie.",
-  },
-];
+async function main() {
+  const { client, model } = makeClient();
+  const messages: ChatCompletionMessageParam[] = [
+    {
+      role: "user",
+      content: "Jaki samochód poleciłbyś czteroosobowej rodzinie w Polsce? Odpowiedz w JSON: marka, model, typ nadwozia i krótkie uzasadnienie.",
+    },
+  ];
 
-let raw: string;
-try {
-  const response = await client.chat.completions.create({
-    model,
-    messages,
-    response_format: { type: "json_schema", json_schema: { name: "Car", schema, strict: true } },
-    temperature: 0.2,
-    max_tokens: 400,
-  });
-  const choice = response.choices[0];
-  if (choice?.finish_reason === "length") console.warn("warning: hit max_tokens, JSON may be cut off");
-  raw = choice?.message.content ?? "";
-  console.log("mode: response_format json_schema (server-side constrained decoding)");
-} catch (error) {
-  // llama.cpp (and Ollama, which embeds it) cannot build the grammar for the
-  // Bielik v3.1 chat template yet and answers HTTP 400 "Failed to initialize
-  // samplers". Fall back to asking for JSON in the prompt and validating it.
-  if (!(error instanceof OpenAI.BadRequestError) || !/sampler|grammar/i.test(error.message)) throw error;
-  console.warn(`note: server rejected response_format (${error.message}); falling back to prompt-only JSON`);
-  const response = await client.chat.completions.create({
-    model,
-    messages: [
-      {
-        role: "system",
-        content: `Odpowiadaj wyłącznie poprawnym obiektem JSON zgodnym z tym schematem, bez komentarzy i bez bloków kodu: ${JSON.stringify(schema)}`,
-      },
-      ...messages,
-    ],
-    temperature: 0.2,
-    max_tokens: 400,
-  });
-  raw = stripCodeFence(response.choices[0]?.message.content ?? "");
-  console.log("mode: prompt-only JSON (not constrained, validated below)");
+  let raw: string;
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      messages,
+      response_format: { type: "json_schema", json_schema: { name: "Car", schema, strict: true } },
+      temperature: 0.2,
+      max_tokens: 400,
+    });
+    const choice = response.choices[0];
+    if (choice?.finish_reason === "length") console.warn("warning: hit max_tokens, JSON may be cut off");
+    raw = choice?.message.content ?? "";
+    console.log("mode: response_format json_schema (server-side constrained decoding)");
+  } catch (error) {
+    // llama.cpp (and Ollama, which embeds it) cannot build the grammar for the
+    // Bielik v3.1 chat template yet and answers HTTP 400 "Failed to initialize
+    // samplers". Fall back to asking for JSON in the prompt and validating it.
+    if (!(error instanceof OpenAI.BadRequestError) || !/sampler|grammar/i.test(error.message)) throw error;
+    console.warn(`note: server rejected response_format (${error.message}); falling back to prompt-only JSON`);
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: "system",
+          content: `Odpowiadaj wyłącznie poprawnym obiektem JSON zgodnym z tym schematem, bez komentarzy i bez bloków kodu: ${JSON.stringify(schema)}`,
+        },
+        ...messages,
+      ],
+      temperature: 0.2,
+      max_tokens: 400,
+    });
+    raw = stripCodeFence(response.choices[0]?.message.content ?? "");
+    console.log("mode: prompt-only JSON (not constrained, validated below)");
+  }
+
+  console.log(`raw: ${raw}`);
+  console.log("parsed:", parseCar(raw));
 }
 
-console.log(`raw: ${raw}`);
-console.log("parsed:", parseCar(raw));
+const isMain =
+  process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
+  await main();
+}
