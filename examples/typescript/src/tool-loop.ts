@@ -66,7 +66,8 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<ToolLoopRes
         // Tool arguments are model output: validate before acting on them.
         args = parseToolArguments(call.function.arguments);
         result = await tool.run(args);
-        content = JSON.stringify(result);
+        // JSON.stringify returns undefined (no throw) for undefined or a function.
+        content = JSON.stringify(result) ?? "null";
       } catch (error) {
         result = { error: error instanceof Error ? error.message : String(error) };
         content = JSON.stringify(result);

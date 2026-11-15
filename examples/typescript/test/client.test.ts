@@ -155,6 +155,31 @@ describe("runToolLoop", () => {
     assert.equal((server.requests[0]!.body.tools as unknown[]).length, 1);
   });
 
+  it("sends valid content when a tool returns undefined", async () => {
+    const tools: LocalTool[] = [
+      {
+        definition: { type: "function", function: { name: "noop", parameters: { type: "object", properties: {} } } },
+        run: () => undefined,
+      },
+    ];
+    const server = mockFetch([
+      {
+        json: completion(
+          { tool_calls: [{ id: "c1", type: "function", function: { name: "noop", arguments: "{}" } }] },
+          "tool_calls",
+        ),
+      },
+      { json: completion({ content: "done" }) },
+    ]);
+    const { client, model } = makeClient(config, { fetch: server.fetch });
+    const result = await runToolLoop({ client, model, tools, messages: [{ role: "user", content: "?" }] });
+
+    assert.equal(result.answer, "done");
+    const second = server.requests[1]!.body.messages as { role: string; content?: string }[];
+    const tool = second.find((m) => m.role === "tool")!;
+    assert.equal(tool.content, "null");
+  });
+
   it("turns unserializable tool results into tool-error content", async () => {
     const cyclic: { self?: unknown } = {};
     cyclic.self = cyclic;
