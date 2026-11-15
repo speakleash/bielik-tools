@@ -209,6 +209,13 @@ instead of treating reasoning as the answer.
 
 Then, run [reasoning\_streaming.py](https://github.com/speakleash/bielik-tools/blob/main/examples/reasoning_streaming.py) to see how the model performs in reasoning mode.
 
+## TypeScript examples
+
+[`examples/typescript`](examples/typescript) has the same scenarios for
+Node.js 20+ with the official `openai` package: chat, streaming, a tool loop,
+JSON Schema output and v3.1 `reasoning_effort`, against vLLM, llama.cpp or
+Ollama. Its README lists what each backend supports for Bielik v3.1.
+
 ## Tests
 
 Unit tests for the tool parser live in `tests/`. They import vLLM, so run them in an environment where vLLM (>= 0.24) is installed; no GPU or model download is needed (a fake tokenizer is used):
