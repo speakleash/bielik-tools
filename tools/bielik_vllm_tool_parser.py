@@ -110,6 +110,25 @@ def _is_forced_regex(regex) -> bool:
         regex == _REQUIRED_TOOL_REGEX or regex.startswith(_NAMED_TOOL_PREFIX))
 
 
+def _closing_tag_outside_string(text: str, start: int, tag: str) -> int:
+    """Find a wrapper boundary without mistaking a JSON string for syntax."""
+    quoted = escaped = False
+    for pos in range(start, len(text)):
+        char = text[pos]
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif text.startswith(tag, pos):
+            return pos
+    return -1
+
+
 # Registered as "bielik" so --tool-call-parser bielik works when this file is
 # loaded via --tool-parser-plugin. Load only one Bielik tool parser file per
 # process: the legacy per-version files register the same name.
@@ -207,29 +226,39 @@ class BielikToolParser(ToolParser):
                                                 content=model_output)
         else:
             try:
-                # there are two possible captures - between tags, or between a
-                # tag and end-of-string so the result of
-                # findall is an array of tuples where one is a function call and
-                # the other is None
-                function_call_tuples = self.tool_call_regex.findall(model_output)
-
-                # load the JSON, and then use it to build the Function and Tool Call
-                raw_function_calls = [
-                    json.loads(match[0] if match[0] else match[1])
-                    for match in function_call_tuples
-                ]
-                tool_calls = [
-                    ToolCall(
-                        type="function",
-                        function=FunctionCall(
-                            name=function_call["name"],
-                            # function call args are JSON but as a string
-                            arguments=json.dumps(function_call["arguments"],
-                                                 ensure_ascii=False)))
-                    for function_call in raw_function_calls
-                ]
-
-                content = model_output[:model_output.find(self.tool_call_start_token)]
+                # Decode JSON from each wrapper instead of pairing the first
+                # opening tag in prose with a later closing tag. raw_decode also
+                # keeps literal wrapper strings inside JSON arguments intact.
+                tool_calls = []
+                cursor = 0
+                first_call_start = None
+                while (start := model_output.find(self.tool_call_start_token, cursor)) >= 0:
+                    payload_start = start + len(self.tool_call_start_token)
+                    payload = model_output[payload_start:].lstrip()
+                    if not payload.startswith("{"):
+                        cursor = payload_start  # a literal mention, not a JSON call
+                        continue
+                    function_call, consumed = json.JSONDecoder().raw_decode(payload)
+                    if (not isinstance(function_call, dict)
+                            or not isinstance(function_call.get("name"), str)
+                            or not function_call["name"]
+                            or not isinstance(function_call.get("arguments"), dict)):
+                        raise ValueError("Expected a tool name and an arguments object")
+                    end = len(model_output) - len(payload) + consumed
+                    tail = model_output[end:].lstrip()
+                    if tail and not tail.startswith(self.tool_call_end_token):
+                        raise ValueError("Unexpected text after tool JSON")
+                    cursor = len(model_output) - len(tail)
+                    if tail:
+                        cursor += len(self.tool_call_end_token)
+                    first_call_start = start if first_call_start is None else first_call_start
+                    tool_calls.append(ToolCall(type="function", function=FunctionCall(
+                        name=function_call["name"],
+                        arguments=json.dumps(function_call["arguments"], ensure_ascii=False))))
+                if not tool_calls:
+                    return ExtractedToolCallInformation(
+                        tools_called=False, tool_calls=[], content=model_output)
+                content = model_output[:first_call_start]
                 return ExtractedToolCallInformation(
                     tools_called=True,
                     tool_calls=tool_calls,
@@ -278,18 +307,40 @@ class BielikToolParser(ToolParser):
             if not required_output:
                 content.append(current_text[cursor:start])
             payload_start = start + len(self.tool_call_start_token)
-            end = current_text.find(self.tool_call_end_token, payload_start)
-            if end < 0:
-                cursor = start  # wait for the rest of this call; do not emit partial JSON
+            payload = current_text[payload_start:].lstrip()
+            if payload and not payload.startswith("{"):
+                # A wrapper mentioned in prose/returned reasoning must not
+                # consume the real call that follows it.
+                content.append(current_text[start:payload_start])
+                cursor = payload_start
+                continue
+            # Most chunks end before any closing wrapper. Avoid repeatedly
+            # decoding/scanning the whole growing JSON in that common case.
+            if current_text.find(self.tool_call_end_token, payload_start) < 0:
+                cursor = start
                 break
-            next_cursor = end + len(self.tool_call_end_token)
             try:
-                call = json.loads(current_text[payload_start:end])
+                call, consumed = json.JSONDecoder().raw_decode(payload)
+                end = len(current_text) - len(payload) + consumed
+                tail = current_text[end:]
+                whitespace = len(tail) - len(tail.lstrip())
+                closing_start = end + whitespace
+                if not current_text.startswith(self.tool_call_end_token, closing_start):
+                    if self.tool_call_end_token.startswith(current_text[closing_start:]):
+                        cursor = start
+                        break
+                    raise ValueError("Unexpected text after tool JSON")
+                next_cursor = closing_start + len(self.tool_call_end_token)
                 if (not isinstance(call, dict) or not isinstance(call.get("name"), str)
                         or not call["name"] or not isinstance(call.get("arguments"), dict)):
                     raise ValueError("Expected a tool name and an arguments object")
                 arguments = json.dumps(call["arguments"], ensure_ascii=False)
             except (ValueError, TypeError):
+                end = _closing_tag_outside_string(current_text, payload_start, self.tool_call_end_token)
+                if end < 0:
+                    cursor = start
+                    break
+                next_cursor = end + len(self.tool_call_end_token)
                 # Preserve malformed completed blocks as text; never execute them.
                 logger.warning("Invalid completed tool call in streaming output")
                 content.append(current_text[start:next_cursor])

@@ -236,3 +236,65 @@ class TestExtractToolCallsStreaming:
         assert content == "Sprawdzę pogodę."
         assert calls[0]["name"] == "get_weather"
         assert json.loads(calls[0]["arguments"]) == {"city": "Kraków"}
+
+
+class TestLiteralToolWrapperMentions:
+    @pytest.mark.parametrize("prefix", [
+        "I will put JSON inside the <tool_call> tags.\n</think> \n",
+        "Use <tool_call> and </tool_call> wrappers. ",
+        "A <tool_call> mention, then another <tool_call> mention. ",
+    ])
+    def test_mention_does_not_swallow_actual_call(self, parser, make_request, prefix):
+        output = prefix + tool_call("get_weather", {"city": "Kraków"})
+        result = parser.extract_tool_calls(output, make_request())
+        assert result.tools_called
+        assert result.content == prefix
+        assert [c.function.name for c in result.tool_calls] == ["get_weather"]
+        assert json.loads(result.tool_calls[0].function.arguments) == {"city": "Kraków"}
+
+    @pytest.mark.parametrize("chunksize", [1, 7, 10000])
+    def test_streaming_mention(self, parser, make_request, chunksize):
+        prefix = "JSON inside <tool_call> tags.\n</think> \n"
+        output = prefix + tool_call("get_weather", {"city": "Kraków"})
+        # Keep special wrappers atomic, as in a real token stream.
+        chunks = ["JSON inside ", "<tool_call>", " tags.\n</think> \n", "<tool_call>"]
+        payload = output[len(prefix) + len("<tool_call>"):-len("</tool_call>")]
+        chunks += [payload[i:i+chunksize] for i in range(0, len(payload), chunksize)]
+        chunks += ["</tool_call>"]
+        content, calls = collect_stream(stream_chunks(parser, make_request(), chunks))
+        assert content == prefix
+        assert list(calls) == [0]
+        assert calls[0]["name"] == "get_weather"
+        assert json.loads(calls[0]["arguments"]) == {"city": "Kraków"}
+
+    def test_wrapper_strings_inside_arguments(self, parser, make_request):
+        args = {"text": "literal <tool_call> and </tool_call> inside JSON"}
+        output = tool_call("get_weather", args)
+        result = parser.extract_tool_calls(output, make_request())
+        assert json.loads(result.tool_calls[0].function.arguments) == args
+        content, calls = collect_stream(stream_chunks(parser, make_request(), ["<tool_call>", output[len("<tool_call>"):-len("</tool_call>")], "</tool_call>"]))
+        assert content == ""
+        assert json.loads(calls[0]["arguments"]) == args
+
+    def test_mentions_without_call_stay_text(self, parser, make_request):
+        output = "Use <tool_call> tags."
+        result = parser.extract_tool_calls(output, make_request())
+        assert not result.tools_called and result.content == output
+        content, calls = collect_stream(stream_chunks(parser, make_request(), [output]))
+        assert content == output and calls == {}
+
+
+    @pytest.mark.parametrize("value", [
+        "literal </tool_call> inside JSON",
+        'escaped quote \" then </tool_call> inside JSON',
+        "backslash \\ then </tool_call> inside JSON",
+    ])
+    def test_stream_split_after_wrapper_inside_argument(self, parser, make_request, value):
+        args = {"text": value}
+        output = tool_call("get_weather", args)
+        cut = output.index("</tool_call>") + len("</tool_call>")
+        chunks = ["<tool_call>", output[len("<tool_call>"):cut], output[cut:]]
+        content, calls = collect_stream(stream_chunks(parser, make_request(), chunks))
+        assert content == ""
+        assert list(calls) == [0]
+        assert json.loads(calls[0]["arguments"]) == args
